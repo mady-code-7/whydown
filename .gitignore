@@ -1,0 +1,79 @@
+# WhyDown .gitignore
+# Based on Python project best practices
+
+# Python environment files
+.venv/
+venv/
+ENV/
+env/
+
+# Environment variables
+.env
+.env.example
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._DS_Store
+.Spotlight-V100
+.Trashes
+hgignore
+
+# Temporary files
+*.tmp
+*.temp
+
+# Log files
+*.log
+logs/
+
+# Database files
+*.sqlite
+*.db
+
+# Test artifacts
+.coverage
+htmlcov/
+.pytest_cache/
+*.pyc
+__pycache__/
+
+# Configuration files
+*.ini
+*.cfg
+*.conf
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Project-specific
+*.pem
+*.key
+
+# Ignore all files in docs/ except for the spec and init scripts
+docs/*
+!docs/SPEC.md
+!docs/init_db.sql
+
+# For future web deployment
+deflategzip
+
+# AWS / ElasticBeanstalk
+*.aws-*/*
+!.aws-*/*.json
+!.aws-*/*.js
+
+# IPython Notebook
+.ipynb_checkpoints
+
+# Jupyter notebooks
+*.ipynb

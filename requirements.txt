@@ -1,0 +1,32 @@
+# WhyDown requirements
+# Based on the tech stack from section 15 of the spec
+
+# Core web framework
+Flask==3.0.0
+gunicorn==21.2.0
+
+# Database connectivity
+psycopg==3.1.12
+
+# Networking (standard library only per spec)
+# socket, ssl, http.client are built-in
+
+# Frontend
+Jinja2==3.1.2
+Chart.js==4.4.0  # Note: This is for frontend templates, actual usage may vary
+
+# Testing
+pytest==7.4.3
+pytest-cov==4.1.0
+
+# Linting
+ruff==0.1.6
+
+# Environment configuration
+python-dotenv==1.0.0
+
+# HTTP client for integration tests (requests)
+requests==2.31.0
+
+# Optional: for mock server testing
+# Will use built-in http.server or similar

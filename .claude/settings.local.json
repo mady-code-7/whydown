@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir *)",
+      "Bash(python -m py_compile app/__init__.py app/config.py app/routes.py app/checker.py app/classifier.py)",
+      "Bash(pytest tests/test_health.py -v)",
+      "Bash(pytest tests/test_config.py -v)"
+    ]
+  },
+  "enabledPlugins": {
+    "commit-commands@anthropic-plugin-directory": true
+  }
+}
