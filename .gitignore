@@ -59,6 +59,10 @@ build/
 *.pem
 *.key
 
+# Claude Code guidance
+CLAUDE.md
+.claude/
+
 # Ignore all files in docs/ except for the spec and init scripts
 docs/*
 !docs/SPEC.md
