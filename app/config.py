@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Final
-from dataclasses import dataclass, asdict
 import os
+from dataclasses import dataclass
 from urllib.parse import urlparse
 
 
@@ -73,7 +71,7 @@ class Config:
     """Complete configuration for WhyDown."""
     database: DatabaseConfig
     app: AppConfig = AppConfig()
-    alert: AlertConfig
+    alert: AlertConfig = AlertConfig(telegram_bot_token="", telegram_chat_id="")
     rate_limit: RateLimitConfig = RateLimitConfig()
     network_timeouts: NetworkTimeouts = NetworkTimeouts()
     thresholds: SiteThresholds = SiteThresholds()

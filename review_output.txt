@@ -1,0 +1,1724 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.14.4, pytest-9.1.1, pluggy-1.7.0
+rootdir: C:\Users\Noah\Documents\PROJECTS\whydown
+plugins: cov-7.1.0
+collected 0 items / 3 errors
+
+=================================== ERRORS ====================================
+___________________ ERROR collecting tests/test_checker.py ____________________
+ImportError while importing test module 'C:\Users\Noah\Documents\PROJECTS\whydown\tests\test_checker.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+C:\Python314\Lib\importlib\__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_checker.py:4: in <module>
+    from app.checker import (
+E   ModuleNotFoundError: No module named 'app'
+____________________ ERROR collecting tests/test_config.py ____________________
+ImportError while importing test module 'C:\Users\Noah\Documents\PROJECTS\whydown\tests\test_config.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+C:\Python314\Lib\importlib\__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_config.py:4: in <module>
+    from app.config import load_config
+E   ModuleNotFoundError: No module named 'app'
+____________________ ERROR collecting tests/test_health.py ____________________
+ImportError while importing test module 'C:\Users\Noah\Documents\PROJECTS\whydown\tests\test_health.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+C:\Python314\Lib\importlib\__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_health.py:3: in <module>
+    from app import create_app
+E   ModuleNotFoundError: No module named 'app'
+=========================== short test summary info ===========================
+ERROR tests/test_checker.py
+ERROR tests/test_config.py
+ERROR tests/test_health.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 3 errors during collection !!!!!!!!!!!!!!!!!!!
+============================== 3 errors in 0.26s ==============================
+I001 [*] Import block is un-sorted or un-formatted
+  --> app\checker.py:12:1
+   |
+10 |   """
+11 |
+12 | / from __future__ import annotations
+13 | |
+14 | | import socket
+15 | | import ssl
+16 | | import http.client
+17 | | import time
+18 | | from dataclasses import dataclass, field
+19 | | from datetime import datetime, timezone
+20 | | from typing import Tuple, Optional, Dict, Any
+21 | | from urllib.parse import urlparse
+22 | | import logging
+23 | |
+24 | | from .classifier import classify_result
+   | |_______________________________________^
+25 |
+26 |   logger = logging.getLogger(__name__)
+   |
+help: Organize imports
+   |
+13 |
+14 + import http.client
+15 + import logging
+16 | import socket
+17 | import ssl
+   - import http.client
+18 | import time
+19 | from dataclasses import dataclass, field
+20 | from datetime import datetime, timezone
+   - from typing import Tuple, Optional, Dict, Any
+21 + from typing import Any, Dict, Optional, Tuple
+22 | from urllib.parse import urlparse
+   - import logging
+23 |
+   |
+
+F401 [*] `dataclasses.field` imported but unused
+  --> app\checker.py:18:36
+   |
+16 | import http.client
+17 | import time
+18 | from dataclasses import dataclass, field
+   |                                    ^^^^^
+19 | from datetime import datetime, timezone
+20 | from typing import Tuple, Optional, Dict, Any
+   |
+help: Remove unused import: `dataclasses.field`
+   |
+17 | import time
+   - from dataclasses import dataclass, field
+18 + from dataclasses import dataclass
+19 | from datetime import datetime, timezone
+   |
+
+F401 [*] `datetime.datetime` imported but unused
+  --> app\checker.py:19:22
+   |
+17 | import time
+18 | from dataclasses import dataclass, field
+19 | from datetime import datetime, timezone
+   |                      ^^^^^^^^
+20 | from typing import Tuple, Optional, Dict, Any
+21 | from urllib.parse import urlparse
+   |
+help: Remove unused import: `datetime.datetime`
+   |
+18 | from dataclasses import dataclass, field
+   - from datetime import datetime, timezone
+19 + from datetime import timezone
+20 | from typing import Tuple, Optional, Dict, Any
+   |
+
+UP035 `typing.Tuple` is deprecated, use `tuple` instead
+  --> app\checker.py:20:1
+   |
+18 | from dataclasses import dataclass, field
+19 | from datetime import datetime, timezone
+20 | from typing import Tuple, Optional, Dict, Any
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+21 | from urllib.parse import urlparse
+22 | import logging
+   |
+
+UP035 `typing.Dict` is deprecated, use `dict` instead
+  --> app\checker.py:20:1
+   |
+18 | from dataclasses import dataclass, field
+19 | from datetime import datetime, timezone
+20 | from typing import Tuple, Optional, Dict, Any
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+21 | from urllib.parse import urlparse
+22 | import logging
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\checker.py:39:13
+   |
+38 |     # Timing data (milliseconds)
+39 |     dns_ms: Optional[float] = None
+   |             ^^^^^^^^^^^^^^^
+40 |     tcp_ms: Optional[float] = None
+41 |     tls_ms: Optional[float] = None
+   |
+help: Convert to `X | None`
+   |
+38 |     # Timing data (milliseconds)
+   -     dns_ms: Optional[float] = None
+39 +     dns_ms: float | None = None
+40 |     tcp_ms: Optional[float] = None
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\checker.py:40:13
+   |
+38 |     # Timing data (milliseconds)
+39 |     dns_ms: Optional[float] = None
+40 |     tcp_ms: Optional[float] = None
+   |             ^^^^^^^^^^^^^^^
+41 |     tls_ms: Optional[float] = None
+42 |     ttfb_ms: Optional[float] = None
+   |
+help: Convert to `X | None`
+   |
+39 |     dns_ms: Optional[float] = None
+   -     tcp_ms: Optional[float] = None
+40 +     tcp_ms: float | None = None
+41 |     tls_ms: Optional[float] = None
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\checker.py:41:13
+   |
+39 |     dns_ms: Optional[float] = None
+40 |     tcp_ms: Optional[float] = None
+41 |     tls_ms: Optional[float] = None
+   |             ^^^^^^^^^^^^^^^
+42 |     ttfb_ms: Optional[float] = None
+43 |     total_ms: Optional[float] = None
+   |
+help: Convert to `X | None`
+   |
+40 |     tcp_ms: Optional[float] = None
+   -     tls_ms: Optional[float] = None
+41 +     tls_ms: float | None = None
+42 |     ttfb_ms: Optional[float] = None
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\checker.py:42:14
+   |
+40 |     tcp_ms: Optional[float] = None
+41 |     tls_ms: Optional[float] = None
+42 |     ttfb_ms: Optional[float] = None
+   |              ^^^^^^^^^^^^^^^
+43 |     total_ms: Optional[float] = None
+   |
+help: Convert to `X | None`
+   |
+41 |     tls_ms: Optional[float] = None
+   -     ttfb_ms: Optional[float] = None
+42 +     ttfb_ms: float | None = None
+43 |     total_ms: Optional[float] = None
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\checker.py:43:15
+   |
+41 |     tls_ms: Optional[float] = None
+42 |     ttfb_ms: Optional[float] = None
+43 |     total_ms: Optional[float] = None
+   |               ^^^^^^^^^^^^^^^
+44 |
+45 |     # HTTP data
+   |
+help: Convert to `X | None`
+   |
+42 |     ttfb_ms: Optional[float] = None
+   -     total_ms: Optional[float] = None
+43 +     total_ms: float | None = None
+44 |
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\checker.py:46:18
+   |
+45 |     # HTTP data
+46 |     status_code: Optional[int] = None
+   |                  ^^^^^^^^^^^^^
+47 |     response_size: Optional[int] = None
+48 |     response_body: Optional[str] = None
+   |
+help: Convert to `X | None`
+   |
+45 |     # HTTP data
+   -     status_code: Optional[int] = None
+46 +     status_code: int | None = None
+47 |     response_size: Optional[int] = None
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\checker.py:47:20
+   |
+45 |     # HTTP data
+46 |     status_code: Optional[int] = None
+47 |     response_size: Optional[int] = None
+   |                    ^^^^^^^^^^^^^
+48 |     response_body: Optional[str] = None
+   |
+help: Convert to `X | None`
+   |
+46 |     status_code: Optional[int] = None
+   -     response_size: Optional[int] = None
+47 +     response_size: int | None = None
+48 |     response_body: Optional[str] = None
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\checker.py:48:20
+   |
+46 |     status_code: Optional[int] = None
+47 |     response_size: Optional[int] = None
+48 |     response_body: Optional[str] = None
+   |                    ^^^^^^^^^^^^^
+49 |
+50 |     # IP and certificate info
+   |
+help: Convert to `X | None`
+   |
+47 |     response_size: Optional[int] = None
+   -     response_body: Optional[str] = None
+48 +     response_body: str | None = None
+49 |
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\checker.py:51:18
+   |
+50 |     # IP and certificate info
+51 |     resolved_ip: Optional[str] = None
+   |                  ^^^^^^^^^^^^^
+52 |     cert_info: Optional[Dict[str, Any]] = None
+   |
+help: Convert to `X | None`
+   |
+50 |     # IP and certificate info
+   -     resolved_ip: Optional[str] = None
+51 +     resolved_ip: str | None = None
+52 |     cert_info: Optional[Dict[str, Any]] = None
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\checker.py:52:16
+   |
+50 |     # IP and certificate info
+51 |     resolved_ip: Optional[str] = None
+52 |     cert_info: Optional[Dict[str, Any]] = None
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^
+53 |
+54 |     # Error information
+   |
+help: Convert to `X | None`
+   |
+51 |     resolved_ip: Optional[str] = None
+   -     cert_info: Optional[Dict[str, Any]] = None
+52 +     cert_info: Dict[str, Any] | None = None
+53 |
+   |
+
+UP006 [*] Use `dict` instead of `Dict` for type annotation
+  --> app\checker.py:52:25
+   |
+50 |     # IP and certificate info
+51 |     resolved_ip: Optional[str] = None
+52 |     cert_info: Optional[Dict[str, Any]] = None
+   |                         ^^^^
+53 |
+54 |     # Error information
+   |
+help: Replace with `dict`
+   |
+51 |     resolved_ip: Optional[str] = None
+   -     cert_info: Optional[Dict[str, Any]] = None
+52 +     cert_info: Optional[dict[str, Any]] = None
+53 |
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\checker.py:55:20
+   |
+54 |     # Error information
+55 |     error_message: Optional[str] = None
+   |                    ^^^^^^^^^^^^^
+56 |     failed_stage: Optional[str] = None
+   |
+help: Convert to `X | None`
+   |
+54 |     # Error information
+   -     error_message: Optional[str] = None
+55 +     error_message: str | None = None
+56 |     failed_stage: Optional[str] = None
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\checker.py:56:19
+   |
+54 |     # Error information
+55 |     error_message: Optional[str] = None
+56 |     failed_stage: Optional[str] = None
+   |                   ^^^^^^^^^^^^^
+57 |
+58 |     # Classification result
+   |
+help: Convert to `X | None`
+   |
+55 |     error_message: Optional[str] = None
+   -     failed_stage: Optional[str] = None
+56 +     failed_stage: str | None = None
+57 |
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\checker.py:60:20
+   |
+58 |     # Classification result
+59 |     result: str = "OK"
+60 |     keyword_found: Optional[bool] = None
+   |                    ^^^^^^^^^^^^^^
+61 |
+62 |     # Certificate flags
+   |
+help: Convert to `X | None`
+   |
+59 |     result: str = "OK"
+   -     keyword_found: Optional[bool] = None
+60 +     keyword_found: bool | None = None
+61 |
+   |
+
+UP006 [*] Use `tuple` instead of `Tuple` for type annotation
+  --> app\checker.py:78:28
+   |
+78 | def parse_url(url: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+   |                            ^^^^^
+79 |     """Parse a URL into its components.
+   |
+help: Replace with `tuple`
+   |
+77 |
+   - def parse_url(url: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+78 + def parse_url(url: str) -> tuple[bool, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+79 |     """Parse a URL into its components.
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\checker.py:78:40
+   |
+78 | def parse_url(url: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+   |                                        ^^^^^^^^^^^^^
+79 |     """Parse a URL into its components.
+   |
+help: Convert to `X | None`
+   |
+77 |
+   - def parse_url(url: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+78 + def parse_url(url: str) -> Tuple[bool, str | None, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+79 |     """Parse a URL into its components.
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\checker.py:78:55
+   |
+78 | def parse_url(url: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+   |                                                       ^^^^^^^^^^^^^
+79 |     """Parse a URL into its components.
+   |
+help: Convert to `X | None`
+   |
+77 |
+   - def parse_url(url: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+78 + def parse_url(url: str) -> Tuple[bool, Optional[str], str | None, Optional[str], Optional[str], Optional[str], Optional[str]]:
+79 |     """Parse a URL into its components.
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\checker.py:78:70
+   |
+78 | def parse_url(url: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+   |                                                                      ^^^^^^^^^^^^^
+79 |     """Parse a URL into its components.
+   |
+help: Convert to `X | None`
+   |
+77 |
+   - def parse_url(url: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+78 + def parse_url(url: str) -> Tuple[bool, Optional[str], Optional[str], str | None, Optional[str], Optional[str], Optional[str]]:
+79 |     """Parse a URL into its components.
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\checker.py:78:85
+   |
+78 | def parse_url(url: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+   |                                                                                     ^^^^^^^^^^^^^
+79 |     """Parse a URL into its components.
+   |
+help: Convert to `X | None`
+   |
+77 |
+   - def parse_url(url: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+78 + def parse_url(url: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str], str | None, Optional[str], Optional[str]]:
+79 |     """Parse a URL into its components.
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\checker.py:78:100
+   |
+78 | def parse_url(url: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+   |                                                                                                    ^^^^^^^^^^^^^
+79 |     """Parse a URL into its components.
+   |
+help: Convert to `X | None`
+   |
+77 |
+   - def parse_url(url: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+78 + def parse_url(url: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str], Optional[str], str | None, Optional[str]]:
+79 |     """Parse a URL into its components.
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\checker.py:78:115
+   |
+78 | def parse_url(url: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+   |                                                                                                                   ^^^^^^^^^^^^^
+79 |     """Parse a URL into its components.
+   |
+help: Convert to `X | None`
+   |
+77 |
+   - def parse_url(url: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+78 + def parse_url(url: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], str | None]:
+79 |     """Parse a URL into its components.
+   |
+
+BLE001 Do not catch blind exception: `Exception`
+   --> app\checker.py:101:12
+    |
+100 |         return True, parsed.scheme, parsed.hostname, str(port), path, None, None
+101 |     except Exception as e:
+    |            ^^^^^^^^^
+102 |         return False, None, None, None, None, str(e), None
+    |
+
+SIM103 Return the condition `addr[0] in range(224, 240)` directly
+   --> app\checker.py:132:9
+    |
+131 |           # Check multicast (224.0.0.0/4)
+132 | /         if addr[0] in range(224, 240):
+133 | |             return True
+134 | |
+135 | |         return False
+    | |____________________^
+136 |       except Exception:
+137 |           return True  # Block on error
+    |
+help: Replace with `return addr[0] in range(224, 240)`
+    |
+131 |         # Check multicast (224.0.0.0/4)
+    -         if addr[0] in range(224, 240):
+    -             return True
+    -
+    -         return False
+132 +         return addr[0] in range(224, 240)
+133 |     except Exception:
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+BLE001 Do not catch blind exception: `Exception`
+   --> app\checker.py:136:12
+    |
+135 |         return False
+136 |     except Exception:
+    |            ^^^^^^^^^
+137 |         return True  # Block on error
+    |
+
+UP006 [*] Use `tuple` instead of `Tuple` for type annotation
+   --> app\checker.py:140:57
+    |
+140 | def resolve_dns(hostname: str, timeout: float = 5.0) -> Tuple[bool, Optional[str], Optional[float], Optional[str]]:
+    |                                                         ^^^^^
+141 |     """Resolve hostname to IP address.
+    |
+help: Replace with `tuple`
+    |
+139 |
+    - def resolve_dns(hostname: str, timeout: float = 5.0) -> Tuple[bool, Optional[str], Optional[float], Optional[str]]:
+140 + def resolve_dns(hostname: str, timeout: float = 5.0) -> tuple[bool, Optional[str], Optional[float], Optional[str]]:
+141 |     """Resolve hostname to IP address.
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> app\checker.py:140:69
+    |
+140 | def resolve_dns(hostname: str, timeout: float = 5.0) -> Tuple[bool, Optional[str], Optional[float], Optional[str]]:
+    |                                                                     ^^^^^^^^^^^^^
+141 |     """Resolve hostname to IP address.
+    |
+help: Convert to `X | None`
+    |
+139 |
+    - def resolve_dns(hostname: str, timeout: float = 5.0) -> Tuple[bool, Optional[str], Optional[float], Optional[str]]:
+140 + def resolve_dns(hostname: str, timeout: float = 5.0) -> Tuple[bool, str | None, Optional[float], Optional[str]]:
+141 |     """Resolve hostname to IP address.
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> app\checker.py:140:84
+    |
+140 | def resolve_dns(hostname: str, timeout: float = 5.0) -> Tuple[bool, Optional[str], Optional[float], Optional[str]]:
+    |                                                                                    ^^^^^^^^^^^^^^^
+141 |     """Resolve hostname to IP address.
+    |
+help: Convert to `X | None`
+    |
+139 |
+    - def resolve_dns(hostname: str, timeout: float = 5.0) -> Tuple[bool, Optional[str], Optional[float], Optional[str]]:
+140 + def resolve_dns(hostname: str, timeout: float = 5.0) -> Tuple[bool, Optional[str], float | None, Optional[str]]:
+141 |     """Resolve hostname to IP address.
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> app\checker.py:140:101
+    |
+140 | def resolve_dns(hostname: str, timeout: float = 5.0) -> Tuple[bool, Optional[str], Optional[float], Optional[str]]:
+    |                                                                                                     ^^^^^^^^^^^^^
+141 |     """Resolve hostname to IP address.
+    |
+help: Convert to `X | None`
+    |
+139 |
+    - def resolve_dns(hostname: str, timeout: float = 5.0) -> Tuple[bool, Optional[str], Optional[float], Optional[str]]:
+140 + def resolve_dns(hostname: str, timeout: float = 5.0) -> Tuple[bool, Optional[str], Optional[float], str | None]:
+141 |     """Resolve hostname to IP address.
+    |
+
+UP041 [*] Replace aliased errors with `TimeoutError`
+   --> app\checker.py:172:12
+    |
+170 |     except socket.gaierror as e:
+171 |         return False, None, None, f"DNS resolution failed: {e}"
+172 |     except socket.timeout:
+    |            ^^^^^^^^^^^^^^
+173 |         return False, None, None, "DNS resolution timeout"
+174 |     except Exception as e:
+    |
+help: Replace `socket.timeout` with builtin `TimeoutError`
+    |
+171 |         return False, None, None, f"DNS resolution failed: {e}"
+    -     except socket.timeout:
+172 +     except TimeoutError:
+173 |         return False, None, None, "DNS resolution timeout"
+    |
+
+BLE001 Do not catch blind exception: `Exception`
+   --> app\checker.py:174:12
+    |
+172 |     except socket.timeout:
+173 |         return False, None, None, "DNS resolution timeout"
+174 |     except Exception as e:
+    |            ^^^^^^^^^
+175 |         return False, None, None, str(e)
+    |
+
+UP006 [*] Use `tuple` instead of `Tuple` for type annotation
+   --> app\checker.py:178:62
+    |
+178 | def connect_tcp(ip: str, port: str, timeout: float = 8.0) -> Tuple[bool, Optional[float], Optional[str]]:
+    |                                                              ^^^^^
+179 |     """Establish TCP connection to IP address.
+    |
+help: Replace with `tuple`
+    |
+177 |
+    - def connect_tcp(ip: str, port: str, timeout: float = 8.0) -> Tuple[bool, Optional[float], Optional[str]]:
+178 + def connect_tcp(ip: str, port: str, timeout: float = 8.0) -> tuple[bool, Optional[float], Optional[str]]:
+179 |     """Establish TCP connection to IP address.
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> app\checker.py:178:74
+    |
+178 | def connect_tcp(ip: str, port: str, timeout: float = 8.0) -> Tuple[bool, Optional[float], Optional[str]]:
+    |                                                                          ^^^^^^^^^^^^^^^
+179 |     """Establish TCP connection to IP address.
+    |
+help: Convert to `X | None`
+    |
+177 |
+    - def connect_tcp(ip: str, port: str, timeout: float = 8.0) -> Tuple[bool, Optional[float], Optional[str]]:
+178 + def connect_tcp(ip: str, port: str, timeout: float = 8.0) -> Tuple[bool, float | None, Optional[str]]:
+179 |     """Establish TCP connection to IP address.
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> app\checker.py:178:91
+    |
+178 | def connect_tcp(ip: str, port: str, timeout: float = 8.0) -> Tuple[bool, Optional[float], Optional[str]]:
+    |                                                                                           ^^^^^^^^^^^^^
+179 |     """Establish TCP connection to IP address.
+    |
+help: Convert to `X | None`
+    |
+177 |
+    - def connect_tcp(ip: str, port: str, timeout: float = 8.0) -> Tuple[bool, Optional[float], Optional[str]]:
+178 + def connect_tcp(ip: str, port: str, timeout: float = 8.0) -> Tuple[bool, Optional[float], str | None]:
+179 |     """Establish TCP connection to IP address.
+    |
+
+UP041 [*] Replace aliased errors with `TimeoutError`
+   --> app\checker.py:201:12
+    |
+200 |         return True, elapsed_ms, None
+201 |     except socket.timeout:
+    |            ^^^^^^^^^^^^^^
+202 |         return False, None, "Connection timeout"
+203 |     except ConnectionRefusedError:
+    |
+help: Replace `socket.timeout` with builtin `TimeoutError`
+    |
+200 |         return True, elapsed_ms, None
+    -     except socket.timeout:
+201 +     except TimeoutError:
+202 |         return False, None, "Connection timeout"
+    |
+
+BLE001 Do not catch blind exception: `Exception`
+   --> app\checker.py:209:12
+    |
+207 |             return False, None, "Connection refused"
+208 |         return False, None, f"Connection failed: {e}"
+209 |     except Exception as e:
+    |            ^^^^^^^^^
+210 |         return False, None, str(e)
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> app\checker.py:213:36
+    |
+213 | def check_certificate(expiry_date: Optional[str], hostname: str) -> Tuple[bool, bool, bool]:
+    |                                    ^^^^^^^^^^^^^
+214 |     """Check certificate validity.
+    |
+help: Convert to `X | None`
+    |
+212 |
+    - def check_certificate(expiry_date: Optional[str], hostname: str) -> Tuple[bool, bool, bool]:
+213 + def check_certificate(expiry_date: str | None, hostname: str) -> Tuple[bool, bool, bool]:
+214 |     """Check certificate validity.
+    |
+
+UP006 [*] Use `tuple` instead of `Tuple` for type annotation
+   --> app\checker.py:213:69
+    |
+213 | def check_certificate(expiry_date: Optional[str], hostname: str) -> Tuple[bool, bool, bool]:
+    |                                                                     ^^^^^
+214 |     """Check certificate validity.
+    |
+help: Replace with `tuple`
+    |
+212 |
+    - def check_certificate(expiry_date: Optional[str], hostname: str) -> Tuple[bool, bool, bool]:
+213 + def check_certificate(expiry_date: Optional[str], hostname: str) -> tuple[bool, bool, bool]:
+214 |     """Check certificate validity.
+    |
+
+UP017 [*] Use `datetime.UTC` alias
+   --> app\checker.py:245:50
+    |
+243 |         # Try parsing
+244 |         cert_expiry = datetime.strptime(expiry_date, "%b %d %H:%M:%S %Y %Z")
+245 |         cert_expiry = cert_expiry.replace(tzinfo=timezone.utc)
+    |                                                  ^^^^^^^^^^^^
+246 |
+247 |         now = datetime.now(timezone.utc)
+    |
+help: Convert to `datetime.UTC` alias
+    |
+18  | from dataclasses import dataclass, field
+    - from datetime import datetime, timezone
+19  + from datetime import datetime, timezone, UTC
+20  | from typing import Tuple, Optional, Dict, Any
+--------------------------------------------------------------------------------
+244 |         cert_expiry = datetime.strptime(expiry_date, "%b %d %H:%M:%S %Y %Z")
+    -         cert_expiry = cert_expiry.replace(tzinfo=timezone.utc)
+245 +         cert_expiry = cert_expiry.replace(tzinfo=UTC)
+246 |
+    |
+
+UP017 [*] Use `datetime.UTC` alias
+   --> app\checker.py:247:28
+    |
+245 |         cert_expiry = cert_expiry.replace(tzinfo=timezone.utc)
+246 |
+247 |         now = datetime.now(timezone.utc)
+    |                            ^^^^^^^^^^^^
+248 |         days_until_expiry = (cert_expiry - now).days
+    |
+help: Convert to `datetime.UTC` alias
+    |
+18  | from dataclasses import dataclass, field
+    - from datetime import datetime, timezone
+19  + from datetime import datetime, timezone, UTC
+20  | from typing import Tuple, Optional, Dict, Any
+--------------------------------------------------------------------------------
+246 |
+    -         now = datetime.now(timezone.utc)
+247 +         now = datetime.now(UTC)
+248 |         days_until_expiry = (cert_expiry - now).days
+    |
+
+BLE001 Do not catch blind exception: `Exception`
+   --> app\checker.py:254:12
+    |
+252 |         elif days_until_expiry <= 7:  # CERT_EXPIRY_WARNING_DAYS
+253 |             is_expiring_soon = True
+254 |     except Exception as e:
+    |            ^^^^^^^^^
+255 |         logger.debug(f"Failed to parse cert expiry date: {e}")
+    |
+
+UP006 [*] Use `tuple` instead of `Tuple` for type annotation
+   --> app\checker.py:260:73
+    |
+260 | def do_tls(ip: str, port: str, hostname: str, timeout: float = 10.0) -> Tuple[bool, Optional[float], Optional[str], Optional[Dict[strΓÇª
+    |                                                                         ^^^^^
+261 |     """Perform TLS handshake and get certificate info.
+    |
+help: Replace with `tuple`
+    |
+259 |
+    - def do_tls(ip: str, port: str, hostname: str, timeout: float = 10.0) -> Tuple[bool, Optional[float], Optional[str], Optional[Dict[str, Any]], bool, bool, bool]:
+260 + def do_tls(ip: str, port: str, hostname: str, timeout: float = 10.0) -> tuple[bool, Optional[float], Optional[str], Optional[Dict[str, Any]], bool, bool, bool]:
+261 |     """Perform TLS handshake and get certificate info.
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> app\checker.py:260:85
+    |
+260 | def do_tls(ip: str, port: str, hostname: str, timeout: float = 10.0) -> Tuple[bool, Optional[float], Optional[str], Optional[Dict[strΓÇª
+    |                                                                                     ^^^^^^^^^^^^^^^
+261 |     """Perform TLS handshake and get certificate info.
+    |
+help: Convert to `X | None`
+    |
+259 |
+    - def do_tls(ip: str, port: str, hostname: str, timeout: float = 10.0) -> Tuple[bool, Optional[float], Optional[str], Optional[Dict[str, Any]], bool, bool, bool]:
+260 + def do_tls(ip: str, port: str, hostname: str, timeout: float = 10.0) -> Tuple[bool, float | None, Optional[str], Optional[Dict[str, Any]], bool, bool, bool]:
+261 |     """Perform TLS handshake and get certificate info.
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> app\checker.py:260:102
+    |
+260 | def do_tls(ip: str, port: str, hostname: str, timeout: float = 10.0) -> Tuple[bool, Optional[float], Optional[str], Optional[Dict[strΓÇª
+    |                                                                                                      ^^^^^^^^^^^^^
+261 |     """Perform TLS handshake and get certificate info.
+    |
+help: Convert to `X | None`
+    |
+259 |
+    - def do_tls(ip: str, port: str, hostname: str, timeout: float = 10.0) -> Tuple[bool, Optional[float], Optional[str], Optional[Dict[str, Any]], bool, bool, bool]:
+260 + def do_tls(ip: str, port: str, hostname: str, timeout: float = 10.0) -> Tuple[bool, Optional[float], str | None, Optional[Dict[str, Any]], bool, bool, bool]:
+261 |     """Perform TLS handshake and get certificate info.
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> app\checker.py:260:117
+    |
+260 | ΓÇª 10.0) -> Tuple[bool, Optional[float], Optional[str], Optional[Dict[str, Any]], bool, bool, bool]:
+    |                                                        ^^^^^^^^^^^^^^^^^^^^^^^^
+261 | ΓÇª
+    |
+help: Convert to `X | None`
+    |
+259 |
+    - def do_tls(ip: str, port: str, hostname: str, timeout: float = 10.0) -> Tuple[bool, Optional[float], Optional[str], Optional[Dict[str, Any]], bool, bool, bool]:
+260 + def do_tls(ip: str, port: str, hostname: str, timeout: float = 10.0) -> Tuple[bool, Optional[float], Optional[str], Dict[str, Any] | None, bool, bool, bool]:
+261 |     """Perform TLS handshake and get certificate info.
+    |
+
+UP006 [*] Use `dict` instead of `Dict` for type annotation
+   --> app\checker.py:260:126
+    |
+260 | ΓÇª= 10.0) -> Tuple[bool, Optional[float], Optional[str], Optional[Dict[str, Any]], bool, bool, bool]:
+    |                                                                  ^^^^
+261 | ΓÇª
+    |
+help: Replace with `dict`
+    |
+259 |
+    - def do_tls(ip: str, port: str, hostname: str, timeout: float = 10.0) -> Tuple[bool, Optional[float], Optional[str], Optional[Dict[str, Any]], bool, bool, bool]:
+260 + def do_tls(ip: str, port: str, hostname: str, timeout: float = 10.0) -> Tuple[bool, Optional[float], Optional[str], Optional[dict[str, Any]], bool, bool, bool]:
+261 |     """Perform TLS handshake and get certificate info.
+    |
+
+UP041 [*] Replace aliased errors with `TimeoutError`
+   --> app\checker.py:334:12
+    |
+332 |     except ssl.SSLError as e:
+333 |         return False, None, f"TLS error: {e}", None, False, False, False
+334 |     except socket.timeout:
+    |            ^^^^^^^^^^^^^^
+335 |         return False, None, "TLS handshake timeout", None, False, False, False
+336 |     except Exception as e:
+    |
+help: Replace `socket.timeout` with builtin `TimeoutError`
+    |
+333 |         return False, None, f"TLS error: {e}", None, False, False, False
+    -     except socket.timeout:
+334 +     except TimeoutError:
+335 |         return False, None, "TLS handshake timeout", None, False, False, False
+    |
+
+BLE001 Do not catch blind exception: `Exception`
+   --> app\checker.py:336:12
+    |
+334 |     except socket.timeout:
+335 |         return False, None, "TLS handshake timeout", None, False, False, False
+336 |     except Exception as e:
+    |            ^^^^^^^^^
+337 |         return False, None, str(e), None, False, False, False
+    |
+
+UP006 [*] Use `tuple` instead of `Tuple` for type annotation
+   --> app\checker.py:341:39
+    |
+340 | def do_http(ip: str, port: str, path: str, hostname: str,
+341 |             timeout: float = 15.0) -> Tuple[bool, Optional[int], Optional[int], Optional[float], Optional[float], Optional[str], OptiΓÇª
+    |                                       ^^^^^
+342 |     """Send HTTP request and get response.
+    |
+help: Replace with `tuple`
+    |
+340 | def do_http(ip: str, port: str, path: str, hostname: str,
+    -             timeout: float = 15.0) -> Tuple[bool, Optional[int], Optional[int], Optional[float], Optional[float], Optional[str], Optional[str]]:
+341 +             timeout: float = 15.0) -> tuple[bool, Optional[int], Optional[int], Optional[float], Optional[float], Optional[str], Optional[str]]:
+342 |     """Send HTTP request and get response.
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> app\checker.py:341:51
+    |
+340 | def do_http(ip: str, port: str, path: str, hostname: str,
+341 |             timeout: float = 15.0) -> Tuple[bool, Optional[int], Optional[int], Optional[float], Optional[float], Optional[str], OptiΓÇª
+    |                                                   ^^^^^^^^^^^^^
+342 |     """Send HTTP request and get response.
+    |
+help: Convert to `X | None`
+    |
+340 | def do_http(ip: str, port: str, path: str, hostname: str,
+    -             timeout: float = 15.0) -> Tuple[bool, Optional[int], Optional[int], Optional[float], Optional[float], Optional[str], Optional[str]]:
+341 +             timeout: float = 15.0) -> Tuple[bool, int | None, Optional[int], Optional[float], Optional[float], Optional[str], Optional[str]]:
+342 |     """Send HTTP request and get response.
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> app\checker.py:341:66
+    |
+340 | def do_http(ip: str, port: str, path: str, hostname: str,
+341 |             timeout: float = 15.0) -> Tuple[bool, Optional[int], Optional[int], Optional[float], Optional[float], Optional[str], OptiΓÇª
+    |                                                                  ^^^^^^^^^^^^^
+342 |     """Send HTTP request and get response.
+    |
+help: Convert to `X | None`
+    |
+340 | def do_http(ip: str, port: str, path: str, hostname: str,
+    -             timeout: float = 15.0) -> Tuple[bool, Optional[int], Optional[int], Optional[float], Optional[float], Optional[str], Optional[str]]:
+341 +             timeout: float = 15.0) -> Tuple[bool, Optional[int], int | None, Optional[float], Optional[float], Optional[str], Optional[str]]:
+342 |     """Send HTTP request and get response.
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> app\checker.py:341:81
+    |
+340 | def do_http(ip: str, port: str, path: str, hostname: str,
+341 |             timeout: float = 15.0) -> Tuple[bool, Optional[int], Optional[int], Optional[float], Optional[float], Optional[str], OptiΓÇª
+    |                                                                                 ^^^^^^^^^^^^^^^
+342 |     """Send HTTP request and get response.
+    |
+help: Convert to `X | None`
+    |
+340 | def do_http(ip: str, port: str, path: str, hostname: str,
+    -             timeout: float = 15.0) -> Tuple[bool, Optional[int], Optional[int], Optional[float], Optional[float], Optional[str], Optional[str]]:
+341 +             timeout: float = 15.0) -> Tuple[bool, Optional[int], Optional[int], float | None, Optional[float], Optional[str], Optional[str]]:
+342 |     """Send HTTP request and get response.
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> app\checker.py:341:98
+    |
+340 | def do_http(ip: str, port: str, path: str, hostname: str,
+341 |             timeout: float = 15.0) -> Tuple[bool, Optional[int], Optional[int], Optional[float], Optional[float], Optional[str], OptiΓÇª
+    |                                                                                                  ^^^^^^^^^^^^^^^
+342 |     """Send HTTP request and get response.
+    |
+help: Convert to `X | None`
+    |
+340 | def do_http(ip: str, port: str, path: str, hostname: str,
+    -             timeout: float = 15.0) -> Tuple[bool, Optional[int], Optional[int], Optional[float], Optional[float], Optional[str], Optional[str]]:
+341 +             timeout: float = 15.0) -> Tuple[bool, Optional[int], Optional[int], Optional[float], float | None, Optional[str], Optional[str]]:
+342 |     """Send HTTP request and get response.
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> app\checker.py:341:115
+    |
+340 | def do_http(ip: str, port: str, path: str, hostname: str,
+341 |             timeout: float = 15.0) -> Tuple[bool, Optional[int], Optional[int], Optional[float], Optional[float], Optional[str], OptiΓÇª
+    |                                                                                                                   ^^^^^^^^^^^^^
+342 |     """Send HTTP request and get response.
+    |
+help: Convert to `X | None`
+    |
+340 | def do_http(ip: str, port: str, path: str, hostname: str,
+    -             timeout: float = 15.0) -> Tuple[bool, Optional[int], Optional[int], Optional[float], Optional[float], Optional[str], Optional[str]]:
+341 +             timeout: float = 15.0) -> Tuple[bool, Optional[int], Optional[int], Optional[float], Optional[float], str | None, Optional[str]]:
+342 |     """Send HTTP request and get response.
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> app\checker.py:341:130
+    |
+340 | ΓÇª
+341 | ΓÇªnal[int], Optional[float], Optional[float], Optional[str], Optional[str]]:
+    |                                                             ^^^^^^^^^^^^^
+342 | ΓÇª
+    |
+help: Convert to `X | None`
+    |
+340 | def do_http(ip: str, port: str, path: str, hostname: str,
+    -             timeout: float = 15.0) -> Tuple[bool, Optional[int], Optional[int], Optional[float], Optional[float], Optional[str], Optional[str]]:
+341 +             timeout: float = 15.0) -> Tuple[bool, Optional[int], Optional[int], Optional[float], Optional[float], Optional[str], str | None]:
+342 |     """Send HTTP request and get response.
+    |
+
+UP041 [*] Replace aliased errors with `TimeoutError`
+   --> app\checker.py:380:12
+    |
+379 |         return True, status_code, response_size, ttfb_ms, total_ms, response_body, None
+380 |     except socket.timeout:
+    |            ^^^^^^^^^^^^^^
+381 |         total_ms = (time.perf_counter() - start_time) * 1000
+382 |         return False, None, None, None, total_ms, None, "HTTP read timeout"
+    |
+help: Replace `socket.timeout` with builtin `TimeoutError`
+    |
+379 |         return True, status_code, response_size, ttfb_ms, total_ms, response_body, None
+    -     except socket.timeout:
+380 +     except TimeoutError:
+381 |         total_ms = (time.perf_counter() - start_time) * 1000
+    |
+
+BLE001 Do not catch blind exception: `Exception`
+   --> app\checker.py:385:12
+    |
+383 |     except http.client.HTTPException as e:
+384 |         return False, None, None, None, None, None, f"HTTP error: {e}"
+385 |     except Exception as e:
+    |            ^^^^^^^^^
+386 |         return False, None, None, None, None, None, str(e)
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> app\checker.py:393:15
+    |
+391 |     slow_threshold_ms: int = 5000,
+392 |     cert_expiry_warning_days: int = 7,
+393 |     timeouts: Optional[NetworkTimeouts] = None,
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^
+394 |     expected_keyword: Optional[str] = None,
+395 | ) -> CheckResult:
+    |
+help: Convert to `X | None`
+    |
+392 |     cert_expiry_warning_days: int = 7,
+    -     timeouts: Optional[NetworkTimeouts] = None,
+393 +     timeouts: NetworkTimeouts | None = None,
+394 |     expected_keyword: Optional[str] = None,
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> app\checker.py:394:23
+    |
+392 |     cert_expiry_warning_days: int = 7,
+393 |     timeouts: Optional[NetworkTimeouts] = None,
+394 |     expected_keyword: Optional[str] = None,
+    |                       ^^^^^^^^^^^^^
+395 | ) -> CheckResult:
+396 |     """Perform a complete URL check with all stages.
+    |
+help: Convert to `X | None`
+    |
+393 |     timeouts: Optional[NetworkTimeouts] = None,
+    -     expected_keyword: Optional[str] = None,
+394 +     expected_keyword: str | None = None,
+395 | ) -> CheckResult:
+    |
+
+F841 Local variable `time_per_stage` is assigned to but never used
+   --> app\checker.py:425:5
+    |
+424 |     # Step 2: DNS Resolution
+425 |     time_per_stage = [
+    |     ^^^^^^^^^^^^^^
+426 |         timeouts.dns_timeout,
+427 |         timeouts.connect_timeout,
+    |
+help: Remove assignment to unused variable `time_per_stage`
+    |
+424 |     # Step 2: DNS Resolution
+    -     time_per_stage = [
+    -         timeouts.dns_timeout,
+    -         timeouts.connect_timeout,
+    -         timeouts.tls_timeout,
+    -         timeouts.read_timeout,
+    -     ]
+425 |
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+UP041 [*] Replace aliased errors with `TimeoutError`
+   --> app\checker.py:471:12
+    |
+469 |         result.tcp_success = True
+470 |         result.tcp_ms = tcp_ms
+471 |     except socket.timeout:
+    |            ^^^^^^^^^^^^^^
+472 |         result.tcp_success = False
+473 |         result.tcp_ms = timeouts.connect_timeout * 1000
+    |
+help: Replace `socket.timeout` with builtin `TimeoutError`
+    |
+470 |         result.tcp_ms = tcp_ms
+    -     except socket.timeout:
+471 +     except TimeoutError:
+472 |         result.tcp_success = False
+    |
+
+BLE001 Do not catch blind exception: `Exception`
+   --> app\checker.py:495:12
+    |
+493 |         )
+494 |         return result
+495 |     except Exception as e:
+    |            ^^^^^^^^^
+496 |         result.tcp_success = False
+497 |         result.tcp_ms = (time.perf_counter() - tcp_start) * 1000
+    |
+
+F841 Local variable `tls_start` is assigned to but never used
+   --> app\checker.py:510:9
+    |
+508 |     # Step 4: TLS Handshake (for HTTPS)
+509 |     if scheme == "https":
+510 |         tls_start = time.perf_counter()
+    |         ^^^^^^^^^
+511 |         tls_success, tls_ms, tls_error, cert_info, cert_expired, cert_expiring_soon, cert_invalid = do_tls(
+512 |             ip, port, hostname, timeouts.tls_timeout
+    |
+help: Remove assignment to unused variable `tls_start`
+    |
+509 |     if scheme == "https":
+    -         tls_start = time.perf_counter()
+510 +         time.perf_counter()
+511 |         tls_success, tls_ms, tls_error, cert_info, cert_expired, cert_expiring_soon, cert_invalid = do_tls(
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+F841 Local variable `http_start` is assigned to but never used
+   --> app\checker.py:543:5
+    |
+542 |     # Step 5: HTTP Request
+543 |     http_start = time.perf_counter()
+    |     ^^^^^^^^^^
+544 |     http_success, status_code, response_size, ttfb_ms, total_ms, response_body, http_error = do_http(
+545 |         ip, port, path, hostname, timeouts.read_timeout
+    |
+help: Remove assignment to unused variable `http_start`
+    |
+542 |     # Step 5: HTTP Request
+    -     http_start = time.perf_counter()
+543 +     time.perf_counter()
+544 |     http_success, status_code, response_size, ttfb_ms, total_ms, response_body, http_error = do_http(
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+UP035 `typing.Tuple` is deprecated, use `tuple` instead
+ --> app\classifier.py:8:1
+  |
+6 | from __future__ import annotations
+7 |
+8 | from typing import Optional, Tuple
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\classifier.py:16:18
+   |
+14 |     tls_success: bool,
+15 |     http_success: bool,
+16 |     status_code: Optional[int],
+   |                  ^^^^^^^^^^^^^
+17 |     ttfb_ms: Optional[float],
+18 |     total_ms: Optional[float],
+   |
+help: Convert to `X | None`
+   |
+15 |     http_success: bool,
+   -     status_code: Optional[int],
+16 +     status_code: int | None,
+17 |     ttfb_ms: Optional[float],
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\classifier.py:17:14
+   |
+15 |     http_success: bool,
+16 |     status_code: Optional[int],
+17 |     ttfb_ms: Optional[float],
+   |              ^^^^^^^^^^^^^^^
+18 |     total_ms: Optional[float],
+19 |     slow_threshold_ms: int,
+   |
+help: Convert to `X | None`
+   |
+16 |     status_code: Optional[int],
+   -     ttfb_ms: Optional[float],
+17 +     ttfb_ms: float | None,
+18 |     total_ms: Optional[float],
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\classifier.py:18:15
+   |
+16 |     status_code: Optional[int],
+17 |     ttfb_ms: Optional[float],
+18 |     total_ms: Optional[float],
+   |               ^^^^^^^^^^^^^^^
+19 |     slow_threshold_ms: int,
+20 |     keyword_found: Optional[bool] = None,
+   |
+help: Convert to `X | None`
+   |
+17 |     ttfb_ms: Optional[float],
+   -     total_ms: Optional[float],
+18 +     total_ms: float | None,
+19 |     slow_threshold_ms: int,
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\classifier.py:20:20
+   |
+18 |     total_ms: Optional[float],
+19 |     slow_threshold_ms: int,
+20 |     keyword_found: Optional[bool] = None,
+   |                    ^^^^^^^^^^^^^^
+21 |     cert_expired: bool = False,
+22 |     cert_expiring_soon: bool = False,
+   |
+help: Convert to `X | None`
+   |
+19 |     slow_threshold_ms: int,
+   -     keyword_found: Optional[bool] = None,
+20 +     keyword_found: bool | None = None,
+21 |     cert_expired: bool = False,
+   |
+
+UP006 [*] Use `tuple` instead of `Tuple` for type annotation
+  --> app\classifier.py:24:6
+   |
+22 |     cert_expiring_soon: bool = False,
+23 |     cert_invalid: bool = False,
+24 | ) -> Tuple[str, Optional[str]]:
+   |      ^^^^^
+25 |     """Classify the result of a check into a status code and failed stage.
+   |
+help: Replace with `tuple`
+   |
+23 |     cert_invalid: bool = False,
+   - ) -> Tuple[str, Optional[str]]:
+24 + ) -> tuple[str, Optional[str]]:
+25 |     """Classify the result of a check into a status code and failed stage.
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> app\classifier.py:24:17
+   |
+22 |     cert_expiring_soon: bool = False,
+23 |     cert_invalid: bool = False,
+24 | ) -> Tuple[str, Optional[str]]:
+   |                 ^^^^^^^^^^^^^
+25 |     """Classify the result of a check into a status code and failed stage.
+   |
+help: Convert to `X | None`
+   |
+23 |     cert_invalid: bool = False,
+   - ) -> Tuple[str, Optional[str]]:
+24 + ) -> Tuple[str, str | None]:
+25 |     """Classify the result of a check into a status code and failed stage.
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+ --> app\config.py:3:1
+  |
+1 |   """Environment configuration for WhyDown."""
+2 |
+3 | / from __future__ import annotations
+4 | |
+5 | | from pathlib import Path
+6 | | from typing import Any, Final
+7 | | from dataclasses import dataclass, asdict
+8 | | import os
+9 | | from urllib.parse import urlparse
+  | |_________________________________^
+help: Organize imports
+  |
+4 |
+5 + import os
+6 + from dataclasses import asdict, dataclass
+7 | from pathlib import Path
+8 | from typing import Any, Final
+  - from dataclasses import dataclass, asdict
+  - import os
+9 | from urllib.parse import urlparse
+  |
+
+F401 [*] `pathlib.Path` imported but unused
+ --> app\config.py:5:21
+  |
+3 | from __future__ import annotations
+4 |
+5 | from pathlib import Path
+  |                     ^^^^
+6 | from typing import Any, Final
+7 | from dataclasses import dataclass, asdict
+  |
+help: Remove unused import: `pathlib.Path`
+  |
+4 |
+  - from pathlib import Path
+5 | from typing import Any, Final
+  |
+
+F401 [*] `typing.Any` imported but unused
+ --> app\config.py:6:20
+  |
+5 | from pathlib import Path
+6 | from typing import Any, Final
+  |                    ^^^
+7 | from dataclasses import dataclass, asdict
+8 | import os
+  |
+help: Remove unused import
+  |
+5 | from pathlib import Path
+  - from typing import Any, Final
+6 | from dataclasses import dataclass, asdict
+  |
+
+F401 [*] `typing.Final` imported but unused
+ --> app\config.py:6:25
+  |
+5 | from pathlib import Path
+6 | from typing import Any, Final
+  |                         ^^^^^
+7 | from dataclasses import dataclass, asdict
+8 | import os
+  |
+help: Remove unused import
+  |
+5 | from pathlib import Path
+  - from typing import Any, Final
+6 | from dataclasses import dataclass, asdict
+  |
+
+F401 [*] `dataclasses.asdict` imported but unused
+ --> app\config.py:7:36
+  |
+5 | from pathlib import Path
+6 | from typing import Any, Final
+7 | from dataclasses import dataclass, asdict
+  |                                    ^^^^^^
+8 | import os
+9 | from urllib.parse import urlparse
+  |
+help: Remove unused import: `dataclasses.asdict`
+  |
+6 | from typing import Any, Final
+  - from dataclasses import dataclass, asdict
+7 + from dataclasses import dataclass
+8 | import os
+  |
+
+BLE001 Do not catch blind exception: `Exception`
+  --> app\config.py:88:16
+   |
+86 |         try:
+87 |             urlparse(self.database.url)
+88 |         except Exception as e:
+   |                ^^^^^^^^^
+89 |             errors.append(f"Invalid DATABASE_URL: {e}")
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> app\routes.py:3:1
+   |
+ 1 |   """Flask routes for WhyDown application."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | from flask import Flask, jsonify, request, render_template
+ 6 | | from functools import wraps
+ 7 | | import logging
+ 8 | | from typing import Callable
+   | |___________________________^
+ 9 |
+10 |   logger = logging.getLogger(__name__)
+   |
+help: Organize imports
+   |
+4  |
+   - from flask import Flask, jsonify, request, render_template
+   - from functools import wraps
+5  | import logging
+6  + from functools import wraps
+7  | from typing import Callable
+8  |
+9  + from flask import Flask, jsonify, render_template, request
+10 +
+11 | logger = logging.getLogger(__name__)
+   |
+
+F401 [*] `flask.render_template` imported but unused
+ --> app\routes.py:5:44
+  |
+3 | from __future__ import annotations
+4 |
+5 | from flask import Flask, jsonify, request, render_template
+  |                                            ^^^^^^^^^^^^^^^
+6 | from functools import wraps
+7 | import logging
+  |
+help: Remove unused import: `flask.render_template`
+  |
+4 |
+  - from flask import Flask, jsonify, request, render_template
+5 + from flask import Flask, jsonify, request
+6 | from functools import wraps
+  |
+
+UP035 [*] Import from `collections.abc` instead: `Callable`
+  --> app\routes.py:8:1
+   |
+ 6 | from functools import wraps
+ 7 | import logging
+ 8 | from typing import Callable
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 9 |
+10 | logger = logging.getLogger(__name__)
+   |
+help: Import from `collections.abc`
+  |
+7 | import logging
+  - from typing import Callable
+8 + from collections.abc import Callable
+9 |
+  |
+
+PIE790 [*] Unnecessary `pass` statement
+  --> app\routes.py:69:5
+   |
+67 | def register_dashboard_routes(app: Flask) -> None:
+68 |     """Register dashboard routes (to be implemented in Phase 3)."""
+69 |     pass
+   |     ^^^^
+help: Remove unnecessary `pass`
+   |
+68 |     """Register dashboard routes (to be implemented in Phase 3)."""
+   -     pass
+69 |
+   |
+
+PIE790 [*] Unnecessary `pass` statement
+  --> app\routes.py:74:5
+   |
+72 | def register_api_routes(app: Flask) -> None:
+73 |     """Register API routes (to be implemented in Phase 3)."""
+74 |     pass
+   |     ^^^^
+help: Remove unnecessary `pass`
+   |
+73 |     """Register API routes (to be implemented in Phase 3)."""
+   -     pass
+74 |
+   |
+
+PIE790 [*] Unnecessary `pass` statement
+  --> app\routes.py:79:5
+   |
+77 | def register_admin_routes(app: Flask) -> None:
+78 |     """Register admin routes (to be implemented in Phase 3)."""
+79 |     pass
+   |     ^^^^
+help: Remove unnecessary `pass`
+   |
+78 |     """Register admin routes (to be implemented in Phase 3)."""
+   -     pass
+79 |
+   |
+
+PIE790 [*] Unnecessary `pass` statement
+  --> app\routes.py:84:5
+   |
+82 | def register_checker_routes(app: Flask) -> None:
+83 |     """Register checker routes (to be implemented in Phase 2)."""
+84 |     pass
+   |     ^^^^
+help: Remove unnecessary `pass`
+   |
+83 |     """Register checker routes (to be implemented in Phase 2)."""
+   -     pass
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests\test_checker.py:3:1
+   |
+ 1 |   """Tests for network checking functions."""
+ 2 |
+ 3 | / import pytest
+ 4 | | from app.checker import (
+ 5 | |     resolve_dns,
+ 6 | |     connect_tcp,
+ 7 | |     do_tls,
+ 8 | |     do_http,
+ 9 | |     check_url,
+10 | |     NetworkTimeouts,
+11 | | )
+12 | | from app.classifier import classify_result
+   | |__________________________________________^
+help: Organize imports
+   |
+3  | import pytest
+4  +
+5  | from app.checker import (
+   -     resolve_dns,
+6  +     NetworkTimeouts,
+7  +     check_url,
+8  |     connect_tcp,
+   -     do_tls,
+9  |     do_http,
+   -     check_url,
+   -     NetworkTimeouts,
+10 +     do_tls,
+11 +     resolve_dns,
+12 | )
+   |
+
+F401 [*] `app.checker.do_tls` imported but unused
+ --> tests\test_checker.py:7:5
+  |
+5 |     resolve_dns,
+6 |     connect_tcp,
+7 |     do_tls,
+  |     ^^^^^^
+8 |     do_http,
+9 |     check_url,
+  |
+help: Remove unused import
+  |
+6 |     connect_tcp,
+  -     do_tls,
+  -     do_http,
+7 |     check_url,
+  -     NetworkTimeouts,
+8 | )
+  |
+
+F401 [*] `app.checker.do_http` imported but unused
+  --> tests\test_checker.py:8:5
+   |
+ 6 |     connect_tcp,
+ 7 |     do_tls,
+ 8 |     do_http,
+   |     ^^^^^^^
+ 9 |     check_url,
+10 |     NetworkTimeouts,
+   |
+help: Remove unused import
+  |
+6 |     connect_tcp,
+  -     do_tls,
+  -     do_http,
+7 |     check_url,
+  -     NetworkTimeouts,
+8 | )
+  |
+
+F401 [*] `app.checker.NetworkTimeouts` imported but unused
+  --> tests\test_checker.py:10:5
+   |
+ 8 |     do_http,
+ 9 |     check_url,
+10 |     NetworkTimeouts,
+   |     ^^^^^^^^^^^^^^^
+11 | )
+12 | from app.classifier import classify_result
+   |
+help: Remove unused import
+  |
+6 |     connect_tcp,
+  -     do_tls,
+  -     do_http,
+7 |     check_url,
+  -     NetworkTimeouts,
+8 | )
+  |
+
+PLR0133 Two constants compared in a comparison, consider replacing `"example.com" == "example.com"`
+  --> tests\test_checker.py:27:16
+   |
+25 |         assert error is None
+26 |         # Should resolve to an IP address
+27 |         assert "example.com" == "example.com"  # Just checking hostname is valid
+   |                ^^^^^^^^^^^^^
+28 |
+29 |     def test_dns_timeout(self, monkeypatch):
+   |
+
+UP041 [*] Replace aliased errors with `TimeoutError`
+  --> tests\test_checker.py:34:19
+   |
+33 |         def mock_getaddrinfo(*args, **kwargs):
+34 |             raise socket.timeout("DNS resolution timeout")
+   |                   ^^^^^^^^^^^^^^
+35 |
+36 |         monkeypatch.setattr(socket, "getaddrinfo", mock_getaddrinfo)
+   |
+help: Replace `socket.timeout` with builtin `TimeoutError`
+   |
+33 |         def mock_getaddrinfo(*args, **kwargs):
+   -             raise socket.timeout("DNS resolution timeout")
+34 +             raise TimeoutError("DNS resolution timeout")
+35 |
+   |
+
+RUF059 Unpacked variable `received` is never used
+   --> tests\test_checker.py:110:15
+    |
+108 |     def test_successful_tcp_connection(self, real_server):
+109 |         """Test successful TCP connection to a real server."""
+110 |         port, received, server = real_server
+    |               ^^^^^^^^
+111 |
+112 |         success, elapsed_ms, error = connect_tcp("127.0.0.1", str(port), timeout=5.0)
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+    |
+109 |         """Test successful TCP connection to a real server."""
+    -         port, received, server = real_server
+110 +         port, _received, server = real_server
+111 |
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+RUF059 Unpacked variable `server` is never used
+   --> tests\test_checker.py:110:25
+    |
+108 |     def test_successful_tcp_connection(self, real_server):
+109 |         """Test successful TCP connection to a real server."""
+110 |         port, received, server = real_server
+    |                         ^^^^^^
+111 |
+112 |         success, elapsed_ms, error = connect_tcp("127.0.0.1", str(port), timeout=5.0)
+    |
+help: Prefix it with an underscore or any other dummy variable pattern
+    |
+109 |         """Test successful TCP connection to a real server."""
+    -         port, received, server = real_server
+110 +         port, received, _server = real_server
+111 |
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+UP041 [*] Replace aliased errors with `TimeoutError`
+   --> tests\test_checker.py:124:19
+    |
+123 |         def mock_connect(*args, **kwargs):
+124 |             raise socket.timeout("Connection timeout")
+    |                   ^^^^^^^^^^^^^^
+125 |
+126 |         monkeypatch.setattr(socket.socket, "connect", mock_connect)
+    |
+help: Replace `socket.timeout` with builtin `TimeoutError`
+    |
+123 |         def mock_connect(*args, **kwargs):
+    -             raise socket.timeout("Connection timeout")
+124 +             raise TimeoutError("Connection timeout")
+125 |
+    |
+
+F401 [*] `urllib.parse.urlparse` imported but unused
+   --> tests\test_checker.py:295:34
+    |
+293 |     def test_check_http_url(self):
+294 |         """Test checking an HTTP URL."""
+295 |         from urllib.parse import urlparse
+    |                                  ^^^^^^^^
+296 |
+297 |         # Check example.com
+    |
+help: Remove unused import: `urllib.parse.urlparse`
+    |
+294 |         """Test checking an HTTP URL."""
+    -         from urllib.parse import urlparse
+295 |
+    |
+
+F841 Local variable `original_resolve_dns` is assigned to but never used
+   --> tests\test_checker.py:344:9
+    |
+342 |         """Test that private IP addresses are blocked (SSRF)."""
+343 |         # Mock DNS resolution to return a private IP
+344 |         original_resolve_dns = resolve_dns
+    |         ^^^^^^^^^^^^^^^^^^^^
+345 |
+346 |         def mock_resolve_dns(hostname, timeout=5.0):
+    |
+help: Remove assignment to unused variable `original_resolve_dns`
+    |
+343 |         # Mock DNS resolution to return a private IP
+    -         original_resolve_dns = resolve_dns
+344 |
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+I001 [*] Import block is un-sorted or un-formatted
+ --> tests\test_config.py:3:1
+  |
+1 |   """Tests for environment-based configuration."""
+2 |
+3 | / import os
+4 | | from app.config import load_config
+  | |__________________________________^
+help: Organize imports
+  |
+3 | import os
+4 +
+5 | from app.config import load_config
+  |
+
+F401 [*] `os` imported but unused
+ --> tests\test_config.py:3:8
+  |
+1 | """Tests for environment-based configuration."""
+2 |
+3 | import os
+  |        ^^
+4 | from app.config import load_config
+  |
+help: Remove unused import: `os`
+  |
+2 |
+  - import os
+3 | from app.config import load_config
+  |
+
+Found 101 errors.
+[*] 81 fixable with `--fix` (7 unsafe fixes available with `--fix --unsafe-fixes`).

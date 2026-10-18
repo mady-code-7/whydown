@@ -1,6 +1,5 @@
 """Tests for environment-based configuration."""
 
-import os
 from app.config import load_config
 
 

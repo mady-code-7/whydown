@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from flask import Flask, jsonify, request, render_template
-from functools import wraps
 import logging
-from typing import Callable
+from collections.abc import Callable
+from functools import wraps
+
+from flask import Flask, jsonify, request
 
 logger = logging.getLogger(__name__)
 
@@ -66,19 +67,15 @@ def register(app: Flask) -> None:
 # Placeholder functions to be implemented in later phases
 def register_dashboard_routes(app: Flask) -> None:
     """Register dashboard routes (to be implemented in Phase 3)."""
-    pass
 
 
 def register_api_routes(app: Flask) -> None:
     """Register API routes (to be implemented in Phase 3)."""
-    pass
 
 
 def register_admin_routes(app: Flask) -> None:
     """Register admin routes (to be implemented in Phase 3)."""
-    pass
 
 
 def register_checker_routes(app: Flask) -> None:
     """Register checker routes (to be implemented in Phase 2)."""
-    pass
