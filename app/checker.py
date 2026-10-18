@@ -129,10 +129,7 @@ def is_private_ip(ip: str) -> bool:
             return True
 
         # Check multicast (224.0.0.0/4)
-        if addr[0] in range(224, 240):
-            return True
-
-        return False
+        return addr[0] in range(224, 240)
     except Exception:
         return True  # Block on error
 
@@ -422,12 +419,6 @@ def check_url(
         return result
 
     # Step 2: DNS Resolution
-    time_per_stage = [
-        timeouts.dns_timeout,
-        timeouts.connect_timeout,
-        timeouts.tls_timeout,
-        timeouts.read_timeout,
-    ]
 
     dns_success, ip, dns_ms, dns_error = resolve_dns(hostname, timeouts.dns_timeout)
     result.dns_ms = dns_ms
@@ -507,7 +498,7 @@ def check_url(
 
     # Step 4: TLS Handshake (for HTTPS)
     if scheme == "https":
-        tls_start = time.perf_counter()
+        time.perf_counter()
         tls_success, tls_ms, tls_error, cert_info, cert_expired, cert_expiring_soon, cert_invalid = do_tls(
             ip, port, hostname, timeouts.tls_timeout
         )
@@ -540,7 +531,7 @@ def check_url(
         result.tls_ms = 0
 
     # Step 5: HTTP Request
-    http_start = time.perf_counter()
+    time.perf_counter()
     http_success, status_code, response_size, ttfb_ms, total_ms, response_body, http_error = do_http(
         ip, port, path, hostname, timeouts.read_timeout
     )

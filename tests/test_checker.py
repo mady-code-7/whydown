@@ -105,7 +105,7 @@ class TestTCPConnection:
 
     def test_successful_tcp_connection(self, real_server):
         """Test successful TCP connection to a real server."""
-        port, received, server = real_server
+        port, _received, _server = real_server
 
         success, elapsed_ms, error = connect_tcp("127.0.0.1", str(port), timeout=5.0)
 
@@ -338,7 +338,6 @@ class TestCheckUrlIntegration:
     def test_check_private_ip_blocked(self, monkeypatch):
         """Test that private IP addresses are blocked (SSRF)."""
         # Mock DNS resolution to return a private IP
-        original_resolve_dns = resolve_dns
 
         def mock_resolve_dns(hostname, timeout=5.0):
             return True, "192.168.1.1", 10.0, None
