@@ -11,7 +11,6 @@ All functions are pure and can be unit-tested with mocks.
 
 from __future__ import annotations
 
-import http.client
 import logging
 import socket
 import ssl
@@ -45,7 +44,7 @@ class CheckResult:
     # HTTP data
     status_code: int | None = None
     response_size: int | None = None
-    response_body: str | None = None
+    keyword_found: bool | None = None
 
     # IP and certificate info
     resolved_ip: str | None = None
@@ -57,7 +56,6 @@ class CheckResult:
 
     # Classification result
     result: str = "OK"
-    keyword_found: bool | None = None
 
     # Certificate flags
     cert_expired: bool = False
@@ -172,7 +170,7 @@ def resolve_dns(hostname: str, timeout: float = 5.0) -> tuple[bool, str | None, 
         return False, None, None, str(e)
 
 
-def connect_tcp(ip: str, port: str, timeout: float = 8.0) -> tuple[bool, float | None, str | None]:
+def connect_tcp(ip: str, port: str, timeout: float = 8.0) -> tuple[bool, socket.socket | None, float | None, str | None]:
     """Establish TCP connection to IP address.
 
     Args:
@@ -181,7 +179,8 @@ def connect_tcp(ip: str, port: str, timeout: float = 8.0) -> tuple[bool, float |
         timeout: Connection timeout in seconds
 
     Returns:
-        Tuple of (success, elapsed_ms, error_message)
+        Tuple of (success, connected_socket, elapsed_ms, error_message)
+        On success, returns a connected socket that the caller must close.
     """
     try:
         start_time = time.perf_counter()
@@ -192,19 +191,18 @@ def connect_tcp(ip: str, port: str, timeout: float = 8.0) -> tuple[bool, float |
         sock.connect((ip, int(port)))
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000
-        sock.close()
 
-        return True, elapsed_ms, None
+        return True, sock, elapsed_ms, None
     except TimeoutError:
-        return False, None, "Connection timeout"
+        return False, None, None, "Connection timeout"
     except ConnectionRefusedError:
-        return False, None, "Connection refused"
+        return False, None, None, "Connection refused"
     except OSError as e:
         if "Connection refused" in str(e):
-            return False, None, "Connection refused"
-        return False, None, f"Connection failed: {e}"
+            return False, None, None, "Connection refused"
+        return False, None, None, f"Connection failed: {e}"
     except Exception as e:
-        return False, None, str(e)
+        return False, None, None, str(e)
 
 
 def check_certificate(expiry_date: str | None, hostname: str) -> tuple[bool, bool, bool]:
@@ -254,17 +252,18 @@ def check_certificate(expiry_date: str | None, hostname: str) -> tuple[bool, boo
     return is_expired, is_expiring_soon, is_invalid
 
 
-def do_tls(ip: str, port: str, hostname: str, timeout: float = 10.0) -> tuple[bool, float | None, str | None, dict[str, Any] | None, bool, bool, bool]:
-    """Perform TLS handshake and get certificate info.
+def do_tls(tcp_sock: socket.socket, hostname: str, timeout: float = 10.0) -> tuple[bool, ssl.SSLSocket | None, float | None, str | None, dict[str, Any] | None, bool, bool, bool]:
+    """Perform TLS handshake on an existing TCP socket.
 
     Args:
-        ip: Target IP address
-        port: Target port as string
+        tcp_sock: Already connected TCP socket
         hostname: Hostname for SNI and certificate validation
         timeout: TLS handshake timeout in seconds
 
     Returns:
-        Tuple of (success, elapsed_ms, error_message, cert_info, cert_expired, cert_expiring_soon, cert_invalid)
+        Tuple of (success, ssl_socket, elapsed_ms, error_message, cert_info,
+                  cert_expired, cert_expiring_soon, cert_invalid)
+        On success, returns an SSL-wrapped socket that the caller must close.
     """
     try:
         start_time = time.perf_counter()
@@ -274,18 +273,12 @@ def do_tls(ip: str, port: str, hostname: str, timeout: float = 10.0) -> tuple[bo
         context.check_hostname = True
         context.verify_mode = ssl.CERT_REQUIRED
 
-        # Create socket and wrap with SSL
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
+        # Wrap the existing TCP socket with SSL
+        ssl_sock = context.wrap_socket(tcp_sock, server_hostname=hostname)
 
-        ssl_sock = context.wrap_socket(sock, server_hostname=hostname)
-        ssl_sock.connect((ip, int(port)))
-
-        # Get certificate
+        # Get certificate (after handshake)
         cert = ssl_sock.getpeercert(binary_form=False)
         elapsed_ms = (time.perf_counter() - start_time) * 1000
-
-        ssl_sock.close()
 
         # Extract certificate info
         cert_info = None
@@ -295,8 +288,6 @@ def do_tls(ip: str, port: str, hostname: str, timeout: float = 10.0) -> tuple[bo
 
         if cert:
             # Get raw certificate for expiry check
-            # The getpeercert() without binary_form already parsed it
-            # We need to check the expiry date
             not_after = cert.get('notAfter')
             if not_after:
                 cert_expired, cert_expiring_soon, cert_invalid = check_certificate(not_after, hostname)
@@ -310,7 +301,7 @@ def do_tls(ip: str, port: str, hostname: str, timeout: float = 10.0) -> tuple[bo
                 "subjectAltName": cert.get('subjectAltName', []),
             }
 
-        return True, elapsed_ms, None, cert_info, cert_expired, cert_expiring_soon, cert_invalid
+        return True, ssl_sock, elapsed_ms, None, cert_info, cert_expired, cert_expiring_soon, cert_invalid
     except ssl.SSLCertVerificationError as e:
         # Certificate verification failed
         elapsed_ms = (time.perf_counter() - start_time) * 1000
@@ -325,60 +316,83 @@ def do_tls(ip: str, port: str, hostname: str, timeout: float = 10.0) -> tuple[bo
         else:
             cert_invalid = True
 
-        return False, elapsed_ms, f"Certificate error: {e}", None, cert_expired, cert_expiring_soon, cert_invalid
+        return False, None, elapsed_ms, f"Certificate error: {e}", None, cert_expired, cert_expiring_soon, cert_invalid
     except ssl.SSLError as e:
-        return False, None, f"TLS error: {e}", None, False, False, False
+        return False, None, None, f"TLS error: {e}", None, False, False, False
     except TimeoutError:
-        return False, None, "TLS handshake timeout", None, False, False, False
+        return False, None, None, "TLS handshake timeout", None, False, False, False
     except Exception as e:
-        return False, None, str(e), None, False, False, False
+        return False, None, None, str(e), None, False, False, False
 
 
-def do_http(ip: str, port: str, path: str, hostname: str,
-            timeout: float = 15.0) -> tuple[bool, int | None, int | None, float | None, float | None, str | None, str | None]:
-    """Send HTTP request and get response.
+def do_http(sock: socket.socket | ssl.SSLSocket, path: str, hostname: str,
+            timeout: float = 15.0, max_body_size: int = 1048576) -> tuple[bool, int | None, int | None, float | None, float | None, str | None, str | None]:
+    """Send HTTP request and get response using an existing socket.
 
     Args:
-        ip: Target IP address
-        port: Target port as string
+        sock: Already connected TCP or SSL socket
         path: Request path (with leading /)
         hostname: Hostname for Host header
         timeout: Read timeout in seconds
+        max_body_size: Maximum response body size to read (default 1 MB)
 
     Returns:
-        Tuple of (success, status_code, response_size, ttfb_ms, total_ms, response_body, error_message)
+        Tuple of (success, status_code, response_size, ttfb_ms, total_ms,
+                  response_body, error_message)
     """
     try:
         start_time = time.perf_counter()
 
-        # Create HTTP connection
-        conn = http.client.HTTPConnection(ip, int(port), timeout=timeout)
+        # Send HTTP request
+        request = f"GET {path} HTTP/1.1\r\nHost: {hostname}\r\nConnection: close\r\n\r\n"
+        sock.sendall(request.encode('utf-8'))
 
-        # Send request with Host header
-        headers = {"Host": hostname}
-        conn.request("GET", path, headers=headers)
+        # Use makefile to read the response properly
+        f = sock.makefile('rb')
 
-        # Get response
-        response = conn.getresponse()
+        # Read status line
+        status_line = f.readline().decode('utf-8', errors='replace').strip()
         ttfb_ms = (time.perf_counter() - start_time) * 1000
 
-        # Read response body
-        body = response.read()
+        if not status_line:
+            f.close()
+            return False, None, None, None, None, None, "No response received"
+
+        # Parse status line
+        parts = status_line.split(' ', 2)
+        if len(parts) < 2:
+            f.close()
+            return False, None, None, None, None, None, f"Invalid response: {status_line}"
+
+        status_code = int(parts[1]) if parts[1].isdigit() else None
+
+        # Read headers until blank line
+        while True:
+            line = f.readline().decode('utf-8', errors='replace')
+            if line.strip() == '':
+                break
+            if not line:
+                break
+
+        ttfb_ms = (time.perf_counter() - start_time) * 1000
+
+        # Read response body, limited to max_body_size + 1 to detect truncation
+        body = f.read(max_body_size + 1)
         total_ms = (time.perf_counter() - start_time) * 1000
 
         response_size = len(body)
+        if response_size > max_body_size:
+            body = body[:max_body_size]
+            response_size = len(body)
+
         response_body = body.decode('utf-8', errors='replace')
 
-        status_code = response.status
-
-        conn.close()
+        f.close()
 
         return True, status_code, response_size, ttfb_ms, total_ms, response_body, None
     except TimeoutError:
         total_ms = (time.perf_counter() - start_time) * 1000
         return False, None, None, None, total_ms, None, "HTTP read timeout"
-    except http.client.HTTPException as e:
-        return False, None, None, None, None, None, f"HTTP error: {e}"
     except Exception as e:
         return False, None, None, None, None, None, str(e)
 
@@ -391,6 +405,10 @@ def check_url(
     expected_keyword: str | None = None,
 ) -> CheckResult:
     """Perform a complete URL check with all stages.
+
+    Uses a single connection through all stages:
+    resolve DNS -> connect TCP -> (HTTPS: wrap with TLS) -> send HTTP request
+    over the same socket (TLS socket for HTTPS).
 
     Args:
         url: The URL to check (http or https)
@@ -419,7 +437,6 @@ def check_url(
         return result
 
     # Step 2: DNS Resolution
-
     dns_success, ip, dns_ms, dns_error = resolve_dns(hostname, timeouts.dns_timeout)
     result.dns_ms = dns_ms
 
@@ -428,7 +445,6 @@ def check_url(
         result.error_message = dns_error
         result.failed_stage = "dns"
         result.total_ms = (time.perf_counter() - overall_start) * 1000
-        # Classification based on DNS failure
         result.result, result.failed_stage = classify_result(
             dns_success=False, tcp_success=False, tls_success=False, http_success=False,
             status_code=None, ttfb_ms=None, total_ms=None, slow_threshold_ms=slow_threshold_ms,
@@ -449,20 +465,14 @@ def check_url(
         return result
 
     # Step 3: TCP Connection
-    tcp_start = time.perf_counter()
-    try:
-        tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        tcp_sock.settimeout(timeouts.connect_timeout)
-        tcp_sock.connect((ip, int(port)))
-        tcp_sock.close()
+    tcp_success, tcp_sock, tcp_ms, tcp_error = connect_tcp(
+        ip, port, timeouts.connect_timeout
+    )
 
-        tcp_ms = (time.perf_counter() - tcp_start) * 1000
-        result.tcp_success = True
+    if not tcp_success:
+        result.tcp_success = False
         result.tcp_ms = tcp_ms
-    except TimeoutError:
-        result.tcp_success = False
-        result.tcp_ms = timeouts.connect_timeout * 1000
-        result.error_message = "TCP connection timeout"
+        result.error_message = tcp_error
         result.failed_stage = "tcp"
         result.total_ms = (time.perf_counter() - overall_start) * 1000
         result.result, result.failed_stage = classify_result(
@@ -471,36 +481,15 @@ def check_url(
             keyword_found=None
         )
         return result
-    except ConnectionRefusedError:
-        result.tcp_success = False
-        result.tcp_ms = (time.perf_counter() - tcp_start) * 1000
-        result.error_message = "Connection refused"
-        result.failed_stage = "tcp"
-        result.total_ms = (time.perf_counter() - overall_start) * 1000
-        result.result, result.failed_stage = classify_result(
-            dns_success=True, tcp_success=False, tls_success=False, http_success=False,
-            status_code=None, ttfb_ms=None, total_ms=None, slow_threshold_ms=slow_threshold_ms,
-            keyword_found=None
-        )
-        return result
-    except Exception as e:
-        result.tcp_success = False
-        result.tcp_ms = (time.perf_counter() - tcp_start) * 1000
-        result.error_message = str(e)
-        result.failed_stage = "tcp"
-        result.total_ms = (time.perf_counter() - overall_start) * 1000
-        result.result, result.failed_stage = classify_result(
-            dns_success=True, tcp_success=False, tls_success=False, http_success=False,
-            status_code=None, ttfb_ms=None, total_ms=None, slow_threshold_ms=slow_threshold_ms,
-            keyword_found=None
-        )
-        return result
+
+    result.tcp_success = True
+    result.tcp_ms = tcp_ms
 
     # Step 4: TLS Handshake (for HTTPS)
+    sock = tcp_sock
     if scheme == "https":
-        time.perf_counter()
-        tls_success, tls_ms, tls_error, cert_info, cert_expired, cert_expiring_soon, cert_invalid = do_tls(
-            ip, port, hostname, timeouts.tls_timeout
+        tls_success, ssl_sock, tls_ms, tls_error, cert_info, cert_expired, cert_expiring_soon, cert_invalid = do_tls(
+            tcp_sock, hostname, timeouts.tls_timeout
         )
         result.tls_success = tls_success
         result.tls_ms = tls_ms
@@ -525,21 +514,21 @@ def check_url(
                 result.result = "TLS_ERROR"
 
             return result
+
+        sock = ssl_sock
     else:
         # HTTP (not HTTPS) - no TLS
         result.tls_success = True  # N/A but mark as success for classification
         result.tls_ms = 0
 
     # Step 5: HTTP Request
-    time.perf_counter()
     http_success, status_code, response_size, ttfb_ms, total_ms, response_body, http_error = do_http(
-        ip, port, path, hostname, timeouts.read_timeout
+        sock, path, hostname, timeouts.read_timeout
     )
 
     result.http_success = http_success
     result.status_code = status_code
     result.response_size = response_size
-    result.response_body = response_body
     result.ttfb_ms = ttfb_ms
     result.total_ms = total_ms
 
@@ -551,6 +540,12 @@ def check_url(
             result.result = "READ_TIMEOUT"
         else:
             result.result = "HTTP_5XX"
+
+        # Clean up socket
+        try:
+            sock.close()
+        except Exception:
+            pass
 
         return result
 
@@ -573,5 +568,11 @@ def check_url(
         cert_expiring_soon=result.cert_expiring_soon,
         cert_invalid=result.cert_invalid
     )
+
+    # Clean up socket
+    try:
+        sock.close()
+    except Exception:
+        pass
 
     return result

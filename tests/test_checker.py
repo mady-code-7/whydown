@@ -107,12 +107,14 @@ class TestTCPConnection:
         """Test successful TCP connection to a real server."""
         port, _received, _server = real_server
 
-        success, elapsed_ms, error = connect_tcp("127.0.0.1", str(port), timeout=5.0)
+        success, sock, elapsed_ms, error = connect_tcp("127.0.0.1", str(port), timeout=5.0)
 
         assert success is True
+        assert sock is not None
         assert elapsed_ms is not None
         assert error is None
-        # Connection succeeded; received data may be empty if client didn't send anything
+        # Connection succeeded; close the returned socket
+        sock.close()
 
     def test_tcp_connection_timeout(self, monkeypatch):
         """Test TCP connection timeout."""
@@ -123,9 +125,10 @@ class TestTCPConnection:
 
         monkeypatch.setattr(socket.socket, "connect", mock_connect)
 
-        success, elapsed_ms, error = connect_tcp("192.0.2.1", "80", timeout=5.0)
+        success, _sock, elapsed_ms, error = connect_tcp("192.0.2.1", "80", timeout=5.0)
 
         assert success is False
+        assert _sock is None
         assert elapsed_ms is None
         assert "timeout" in error.lower()
 
@@ -138,9 +141,10 @@ class TestTCPConnection:
 
         monkeypatch.setattr(socket.socket, "connect", mock_connect)
 
-        success, elapsed_ms, error = connect_tcp("127.0.0.1", "9999", timeout=5.0)
+        success, _sock, elapsed_ms, error = connect_tcp("127.0.0.1", "9999", timeout=5.0)
 
         assert success is False
+        assert _sock is None
         assert elapsed_ms is None
         assert "refused" in error.lower()
 
