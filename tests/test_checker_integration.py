@@ -17,7 +17,7 @@ import inspect
 import socket
 
 import pytest
-from mock_server import MARKER
+from mock_server import MARKER, MockServer
 
 from app.checker import NetworkTimeouts, check_url
 
@@ -162,8 +162,8 @@ class TestSlowResponse:
     def test_slow_response_is_classified_slow(self, mock_server):
         """The mock server delays its answer, which exceeds the threshold.
 
-        The checker sends the path of the URL without its query string, so
-        the mock server applies its default delay of 250 ms here.
+        The URL has no query string, so the mock server applies its default
+        delay of 250 ms here.
         """
         result = _check(mock_server.url("/slow"), slow_threshold_ms=100)
 
@@ -197,22 +197,19 @@ class TestHttpErrorStatus:
         assert result.failed_stage == "http"
         assert result.status_code == 404
 
-    @pytest.mark.xfail(
-        reason=(
-            "classify_result() checks the 4xx/5xx range before it compares the "
-            "status with expected_status, so a site that is expected to answer "
-            "404 is still reported as HTTP_4XX. Spec section 8.3 calls "
-            "HTTP_4XX an 'unexpected' 4xx/5xx, so the classifier has to "
-            "honour expected_status here."
-        ),
-        strict=True,
-    )
     def test_expected_status_is_not_an_error(self, mock_server):
         """A 404 that the user expects is fine."""
         result = _check(mock_server.url("/status/404"), expected_status=404)
 
         assert result.result == "OK"
         assert result.status_code == 404
+
+    def test_expected_500_is_not_an_error(self, mock_server):
+        """A 500 that the user expects is fine."""
+        result = _check(mock_server.url("/status/500"), expected_status=500)
+
+        assert result.result == "OK"
+        assert result.status_code == 500
 
 
 class TestKeywordMissing:
@@ -312,3 +309,37 @@ def test_repeated_checks_do_not_break_the_server(mock_server, path):
         result = _check(mock_server.url(path))
         assert result.result != "INTERNAL_ERROR"
         assert result.total_ms is not None
+
+
+class TestQueryString:
+    """The query string of the monitored URL is forwarded to the server."""
+
+    def test_query_string_delay_is_applied(self, mock_server):
+        """The mock server applies the delay asked for in the query string."""
+        result = _check(mock_server.url("/slow?ms=250"), slow_threshold_ms=100)
+
+        assert result.result == "SLOW"
+        assert result.failed_stage is None
+        assert result.status_code == 200
+        # The delay really happened.
+        assert result.total_ms >= 250
+
+    def test_query_string_reaches_the_server(self):
+        """A delay that differs from the server default proves forwarding.
+
+        The server is started with a default delay of 0 ms, so only the
+        "?ms=250" of the URL can produce the observed wait.
+        """
+        server = MockServer(slow_ms=0)
+        try:
+            result = check_url(
+                server.url("/slow?ms=250"),
+                slow_threshold_ms=100,
+                timeouts=FAST_TIMEOUTS,
+                allow_private=True,
+            )
+
+            assert result.result == "SLOW"
+            assert result.total_ms >= 250
+        finally:
+            server.stop()

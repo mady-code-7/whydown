@@ -36,7 +36,8 @@ def classify_result(
         total_ms: Total response time in milliseconds
         slow_threshold_ms: Threshold for SLOW classification (ms)
         keyword_found: True if expected keyword present, False if missing, None if not checked
-        expected_status: Expected HTTP status (default 200). A matching 3xx is OK.
+        expected_status: Expected HTTP status (default 200). A status that
+            matches it is not an error, even when it is a 4xx or 5xx.
         cert_expired: True if certificate expired
         cert_expiring_soon: True if certificate expires within warning period
         cert_invalid: True if certificate invalid (hostname mismatch, untrusted, etc.)
@@ -77,36 +78,35 @@ def classify_result(
     if not http_success or status_code is None:
         return "READ_TIMEOUT", "http"
 
-    # 6. 3xx: no redirect followed. OK only if it matches expected_status.
-    if 300 <= status_code < 400:
-        if status_code == expected_status:
-            pass  # 3xx matches expectation -> continue to keyword/slow/OK
-        else:
-            return "HTTP_3XX", "http"
-
-    # 7. HTTP error status codes
-    if 400 <= status_code < 500:
-        return "HTTP_4XX", "http"
-    if 500 <= status_code < 600:
-        return "HTTP_5XX", "http"
-
-    # 8. Unexpected status code (not matching expected)
+    # 6. A status code that matches the expected one is never an error, even
+    #    when it is a 4xx or 5xx: a site that is expected to answer 404 is
+    #    healthy when it answers 404. Only a status the site did not expect is
+    #    reported as an HTTP error.
     if status_code != expected_status:
+        if 300 <= status_code < 400:
+            # A 3xx is not followed, so an unexpected redirect is a
+            # misconfiguration.
+            return "HTTP_3XX", "http"
+        if 400 <= status_code < 500:
+            return "HTTP_4XX", "http"
+        if 500 <= status_code < 600:
+            return "HTTP_5XX", "http"
+        # Any other unexpected status (1xx, 2xx) is treated as a client error.
         return "HTTP_4XX", "http"
 
-    # 9. Keyword check failure
+    # 7. Keyword check failure
     if keyword_found is False:
         return "KEYWORD_MISSING", "http"
 
-    # 10. Slow DNS: the resolver was the bottleneck. Reported separately from
+    # 8. Slow DNS: the resolver was the bottleneck. Reported separately from
     # SLOW because the fix is different (resolver/DNS, not the web server).
     if dns_ms is not None and dns_ms > slow_threshold_ms:
         return "DNS_SLOW", None
 
-    # 11. Slow response: the total time of the check (which includes every
+    # 9. Slow response: the total time of the check (which includes every
     # stage) exceeded the threshold.
     if total_ms is not None and total_ms > slow_threshold_ms:
         return "SLOW", None
 
-    # 12. All good
+    # 10. All good
     return "OK", None

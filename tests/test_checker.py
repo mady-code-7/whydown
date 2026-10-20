@@ -9,6 +9,7 @@ from app.checker import (
     check_url,
     connect_tcp,
     do_http,
+    parse_url,
     resolve_dns,
 )
 from app.classifier import classify_result
@@ -345,6 +346,78 @@ class TestClassifier:
         assert result == "HTTP_5XX"
         assert stage == "http"
 
+    def test_expected_404_is_not_an_error(self):
+        """A 404 the site is expected to answer is healthy."""
+        result, stage = classify_result(
+            dns_success=True,
+            tcp_success=True,
+            tls_success=True,
+            http_success=True,
+            status_code=404,
+            ttfb_ms=100.0,
+            total_ms=200.0,
+            slow_threshold_ms=5000,
+            keyword_found=None,
+            expected_status=404,
+        )
+
+        assert result == "OK"
+        assert stage is None
+
+    def test_expected_500_is_not_an_error(self):
+        """A 500 the site is expected to answer is healthy."""
+        result, stage = classify_result(
+            dns_success=True,
+            tcp_success=True,
+            tls_success=True,
+            http_success=True,
+            status_code=500,
+            ttfb_ms=100.0,
+            total_ms=200.0,
+            slow_threshold_ms=5000,
+            keyword_found=None,
+            expected_status=500,
+        )
+
+        assert result == "OK"
+        assert stage is None
+
+    def test_unexpected_404_is_an_error(self):
+        """A 404 the site did not expect is a client error."""
+        result, stage = classify_result(
+            dns_success=True,
+            tcp_success=True,
+            tls_success=True,
+            http_success=True,
+            status_code=404,
+            ttfb_ms=100.0,
+            total_ms=200.0,
+            slow_threshold_ms=5000,
+            keyword_found=None,
+            expected_status=200,
+        )
+
+        assert result == "HTTP_4XX"
+        assert stage == "http"
+
+    def test_unexpected_500_is_an_error(self):
+        """A 500 the site did not expect is a server error."""
+        result, stage = classify_result(
+            dns_success=True,
+            tcp_success=True,
+            tls_success=True,
+            http_success=True,
+            status_code=500,
+            ttfb_ms=100.0,
+            total_ms=200.0,
+            slow_threshold_ms=5000,
+            keyword_found=None,
+            expected_status=200,
+        )
+
+        assert result == "HTTP_5XX"
+        assert stage == "http"
+
     def test_classify_keyword_missing(self):
         """Test classification of missing keyword."""
         result, stage = classify_result(
@@ -468,6 +541,29 @@ class TestCheckUrlIntegration:
         assert result.total_ms is not None
         assert result.result == "OK"
 
+    def test_check_url_keeps_the_query_string(self, monkeypatch):
+        """The request target handed to the HTTP stage keeps the query."""
+        captured = {}
+
+        def fake_do_http(sock, path, hostname, *args, **kwargs):
+            captured["path"] = path
+            return (True, 200, 5, 20.0, 25.0, "hello", None)
+
+        monkeypatch.setattr(
+            "app.checker.resolve_dns",
+            lambda hostname, timeout=5.0: (True, "93.184.216.34", 1.0, None),
+        )
+        monkeypatch.setattr(
+            "app.checker.connect_tcp",
+            lambda ip, port, timeout=8.0: (True, _FakeSocket(), 2.0, None),
+        )
+        monkeypatch.setattr("app.checker.do_http", fake_do_http)
+
+        result = check_url("http://monitored.test/slow?ms=250")
+
+        assert captured["path"] == "/slow?ms=250"
+        assert result.result == "OK"
+
     def test_check_invalid_url(self):
         """Test checking an invalid URL."""
         result = check_url(
@@ -565,6 +661,68 @@ class TestCheckUrlFailureClassification:
         assert result.error_message is not None
 
 
+class TestParseUrl:
+    """The request target keeps the query string and drops the fragment."""
+
+    def test_url_without_a_query_string(self):
+        success, scheme, hostname, port, path, error, _ = parse_url(
+            "http://monitored.test/ok"
+        )
+
+        assert success is True
+        assert scheme == "http"
+        assert hostname == "monitored.test"
+        assert port == "80"
+        assert path == "/ok"
+        assert error is None
+
+    def test_url_keeps_the_query_string(self):
+        success, _scheme, _hostname, _port, path, error, _ = parse_url(
+            "http://monitored.test/slow?ms=250"
+        )
+
+        assert success is True
+        assert path == "/slow?ms=250"
+        assert error is None
+
+    def test_query_string_on_the_root_path(self):
+        _success, _scheme, _hostname, _port, path, _error, _ = parse_url(
+            "http://monitored.test/?a=1&b=2"
+        )
+
+        assert path == "/?a=1&b=2"
+
+    def test_empty_path_becomes_the_root(self):
+        _success, _scheme, _hostname, _port, path, _error, _ = parse_url(
+            "http://monitored.test"
+        )
+
+        assert path == "/"
+
+    def test_fragment_is_dropped(self):
+        """A fragment is never sent to the server."""
+        _success, _scheme, _hostname, _port, path, _error, _ = parse_url(
+            "http://monitored.test/ok?x=1#section"
+        )
+
+        assert path == "/ok?x=1"
+
+    def test_empty_query_string_is_not_appended(self):
+        _success, _scheme, _hostname, _port, path, _error, _ = parse_url(
+            "http://monitored.test/ok?"
+        )
+
+        assert path == "/ok"
+
+    def test_https_uses_the_default_port(self):
+        _success, scheme, _hostname, port, _path, _error, _ = parse_url(
+            "https://monitored.test/ok"
+        )
+
+        assert scheme == "https"
+        assert port == "443"
+
+
 class TestDoHttp:
     """Tests for the HTTP stage, driven against a local socket."""
 
@@ -652,6 +810,26 @@ class TestDoHttp:
         assert success is False
         assert error is not None
         assert body is None
+
+    def test_request_target_keeps_the_query_string(self, local_server):
+        """The query string is part of the request line."""
+        received = []
+
+        def handler(client):
+            received.append(client.recv(4096))
+            client.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+
+        port = local_server(handler)
+        sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+
+        success, status_code, *_rest = do_http(
+            sock, "/slow?ms=250", "127.0.0.1", timeout=5
+        )
+
+        assert success is True
+        assert status_code == 200
+        assert received
+        assert b"GET /slow?ms=250 " in received[0]
 
 
 class TestCheckUrlSafetyNet:

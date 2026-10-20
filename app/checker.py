@@ -90,6 +90,8 @@ def parse_url(url: str) -> tuple[bool, str | None, str | None, str | None, str |
 
     Returns:
         Tuple of (success, scheme, hostname, port, path, error_message, resolved_ip_hint)
+        The path includes the query string (e.g. "/search?q=cats") but never
+        the fragment.
     """
     try:
         parsed = urlparse(url)
@@ -103,9 +105,13 @@ def parse_url(url: str) -> tuple[bool, str | None, str | None, str | None, str |
         if port is None:
             port = 443 if parsed.scheme == "https" else 80
 
+        # Keep the query string so the server can read query parameters. The
+        # fragment is never included (it is not sent to the server).
         path = parsed.path or "/"
         if not path.startswith("/"):
             path = "/" + path
+        if parsed.query:
+            path = f"{path}?{parsed.query}"
 
         return True, parsed.scheme, parsed.hostname, str(port), path, None, None
     except ValueError as e:
@@ -321,7 +327,7 @@ def do_http(sock: socket.socket | ssl.SSLSocket, path: str, hostname: str,
 
     Args:
         sock: Already connected TCP or SSL socket
-        path: Request path (with leading /)
+        path: Request target (with leading /, query string included)
         hostname: Hostname for Host header
         timeout: Read timeout in seconds
         max_body_size: Maximum response body size to read (default 1 MB)

@@ -44,9 +44,9 @@ MARKER = "WHYDOWN-OK-MARKER"
 MAX_SLOW_MS = 5_000
 
 #: Default delay of /slow when no (or an invalid) ms parameter is given.
-#: It is deliberately short: the checker drops the query string of the URL,
-#: so a check against "/slow?ms=250" really asks for "/slow" and the default
-#: delay is what the server applies.
+#: It is deliberately short: a check against "/slow" without a query string
+#: gets this delay, while "/slow?ms=250" gets exactly 250 ms because the
+#: checker forwards the query string.
 DEFAULT_SLOW_MS = 250
 
 #: How long the accept loop waits for a new connection before it checks the
