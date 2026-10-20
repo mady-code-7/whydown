@@ -15,6 +15,9 @@ from __future__ import annotations
 
 import inspect
 import socket
+import threading
+import time
+from contextlib import suppress
 
 import pytest
 from mock_server import MARKER, MockServer
@@ -55,6 +58,64 @@ def _closed_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
+
+
+class SilentTlsServer:
+    """A TCP server that accepts connections but never speaks TLS.
+
+    The client sends its ClientHello and waits for a ServerHello that never
+    arrives, so the handshake can only end in a timeout. This is the
+    situation of a server that accepts the connection but is stuck before
+    the TLS negotiation.
+    """
+
+    def __init__(self, host: str = "127.0.0.1") -> None:
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._sock.bind((host, 0))
+        self._sock.listen(8)
+        self._stop = threading.Event()
+        self.port = self._sock.getsockname()[1]
+        self._thread = threading.Thread(target=self._accept_loop, daemon=True)
+        self._thread.start()
+
+    def url(self) -> str:
+        """HTTPS URL of this server."""
+        return f"https://127.0.0.1:{self.port}/"
+
+    def stop(self) -> None:
+        """Stop the server and release the port."""
+        self._stop.set()
+        with suppress(OSError):
+            self._sock.close()
+        self._thread.join(timeout=2)
+
+    def _accept_loop(self) -> None:
+        """Accept connections and keep them open without answering."""
+        self._sock.settimeout(0.05)
+        while not self._stop.is_set():
+            try:
+                conn, _addr = self._sock.accept()
+            except TimeoutError:
+                # Only means "no client yet".
+                continue
+            except OSError:
+                # The listening socket was closed by stop().
+                break
+            threading.Thread(target=self._hold, args=(conn,), daemon=True).start()
+
+    @staticmethod
+    def _hold(conn: socket.socket) -> None:
+        """Read whatever arrives and never answer."""
+        try:
+            while conn.recv(4096):
+                pass
+        except OSError:
+            # The client gave up and closed the connection.
+            pass
+        finally:
+            with suppress(OSError):
+                conn.close()
 
 
 class TestHealthySite:
@@ -266,6 +327,41 @@ class TestMockDownAndUp:
 
         assert result.result == "OK"
         assert result.status_code == 200
+
+
+class TestTlsTimeout:
+    """The TLS stage is bounded by the configured tls_timeout."""
+
+    def test_handshake_that_never_completes_fails_at_the_tls_stage(self):
+        """A server that never finishes the handshake times out.
+
+        The timeout of the TLS stage is the one from NetworkTimeouts, so the
+        check gives up after about half a second instead of waiting for the
+        timeout of the connect stage (5 s here).
+        """
+        timeouts = NetworkTimeouts(
+            dns_timeout=1.0,
+            connect_timeout=5.0,
+            tls_timeout=0.5,
+            read_timeout=1.0,
+            total_timeout=10.0,
+        )
+        server = SilentTlsServer()
+        try:
+            start = time.perf_counter()
+            result = check_url(
+                server.url(), timeouts=timeouts, allow_private=True
+            )
+            elapsed = time.perf_counter() - start
+        finally:
+            server.stop()
+
+        assert result.result == "TLS_ERROR"
+        assert result.failed_stage == "tls"
+        assert result.tls_success is False
+        assert result.status_code is None
+        # The handshake gave up after about the TLS timeout.
+        assert elapsed < 2.0
 
 
 class TestSsrfFilter:

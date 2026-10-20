@@ -35,15 +35,27 @@ class TestBlockedAddresses:
     def test_non_global_addresses_are_blocked(self, ip):
         assert is_private_ip(ip) is True
 
-    def test_multicast_addresses_are_not_blocked(self):
-        """The filter follows ``ipaddress.is_global``.
 
-        The IPv4 multicast range (224.0.0.0/4) counts as global by that
-        definition, so it passes the filter. The docstring of
-        ``is_private_ip()`` lists multicast among the blocked ranges - the
-        two disagree, and this test pins down what the code actually does.
-        """
-        assert is_private_ip("224.0.0.1") is False
+class TestSpecialRanges:
+    """Multicast, reserved and unspecified addresses are blocked as well.
+
+    ``ipaddress.is_global`` counts the IPv4 multicast range as global on
+    some Python versions, so these ranges are blocked by name and not only
+    through the is_global check.
+    """
+
+    @pytest.mark.parametrize(
+        "ip",
+        [
+            "224.0.0.1",  # multicast
+            "239.255.255.250",  # multicast (SSDP)
+            "240.0.0.1",  # reserved
+            "255.255.255.255",  # broadcast (inside the reserved range)
+            "0.0.0.0",  # unspecified
+        ],
+    )
+    def test_special_ranges_are_blocked(self, ip):
+        assert is_private_ip(ip) is True
 
 
 class TestAllowedAddresses:

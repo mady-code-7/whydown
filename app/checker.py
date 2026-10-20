@@ -262,6 +262,12 @@ def do_tls(tcp_sock: socket.socket, hostname: str, timeout: float = 10.0,
         context.check_hostname = True
         context.verify_mode = ssl.CERT_REQUIRED
 
+        # The TCP socket still carries the timeout of the connect stage. The
+        # TLS stage applies its own timeout, so that the handshake is really
+        # bounded by NetworkTimeouts.tls_timeout and not by the connect
+        # timeout that happens to be left on the socket.
+        tcp_sock.settimeout(timeout)
+
         # Wrap the existing TCP socket with SSL
         ssl_sock = context.wrap_socket(tcp_sock, server_hostname=hostname)
 

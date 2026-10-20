@@ -281,12 +281,36 @@ class TestDoTlsErrors:
             _serving(lambda conn: time.sleep(3)) as port,
             socket.create_connection((HOST, port), timeout=5) as sock,
         ):
-            sock.settimeout(0.5)
-            success, ssl_sock, _elapsed, error, *_rest = do_tls(sock, SERVER_NAME)
+            success, ssl_sock, _elapsed, error, *_rest = do_tls(
+                sock, SERVER_NAME, timeout=0.5
+            )
 
         assert success is False
         assert ssl_sock is None
         assert error == "TLS handshake timeout"
+
+    def test_tls_timeout_argument_replaces_the_socket_timeout(self):
+        """do_tls applies its own timeout, not the one left on the socket.
+
+        The socket still carries the timeout of the connect stage (5 s here).
+        Without ``sock.settimeout(timeout)`` the handshake would wait for
+        the socket timeout and blow the budget of the TLS stage.
+        """
+        with (
+            _serving(lambda conn: time.sleep(3)) as port,
+            socket.create_connection((HOST, port), timeout=5) as sock,
+        ):
+            start = time.perf_counter()
+            success, ssl_sock, _elapsed, error, *_rest = do_tls(
+                sock, SERVER_NAME, timeout=0.5
+            )
+            elapsed = time.perf_counter() - start
+
+        assert success is False
+        assert ssl_sock is None
+        assert error == "TLS handshake timeout"
+        # The handshake gave up after about the timeout, not after 5 s.
+        assert elapsed < 2.0
 
     @pytest.mark.parametrize(
         "error",
