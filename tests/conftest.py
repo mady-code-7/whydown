@@ -6,6 +6,11 @@ other than localhost, fails immediately. A future test can therefore never
 silently depend on the real internet - it has to use the local mock server on
 127.0.0.1 or monkeypatch the stage functions.
 
+The autouse ``dotenv_calls`` fixture does the same for the .env file: the
+command line entry point of ``app.db`` loads it, but during a test run the
+real loader is replaced by a recorder, so no real .env file (and no real
+secret) is ever read.
+
 Tests that already monkeypatch ``socket.getaddrinfo`` or ``socket.socket.connect``
 keep working: the test's own patch is applied after this fixture and therefore
 takes precedence.
@@ -131,3 +136,28 @@ def no_real_network(monkeypatch):
     monkeypatch.setattr(socket, "create_connection", guarded_create_connection)
 
     yield
+
+
+@pytest.fixture(autouse=True)
+def dotenv_calls(monkeypatch):
+    """Replace the .env loader with a recorder, so no real .env is read.
+
+    ``app.db`` calls ``load_dotenv()`` on its command line entry point only.
+    During a test run the call is intercepted here and recorded instead, which
+    keeps the suite hermetic - a real .env file in the working directory is
+    never opened and no real secret ever reaches the process environment.
+
+    A test that wants to assert on the loading behaviour asks for this
+    fixture by name and inspects the returned list of calls.
+    """
+    from app import db
+
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def recording_load_dotenv(*args: object, **kwargs: object) -> bool:
+        calls.append((args, kwargs))
+        return True
+
+    monkeypatch.setattr(db, "load_dotenv", recording_load_dotenv)
+
+    return calls

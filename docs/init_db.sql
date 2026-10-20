@@ -1,8 +1,11 @@
--- WhyDown Database Schema
--- Created for Phase 1 - Project Foundations
--- Run this script once to initialize the database
-
-BEGIN;
+-- WhyDown database schema (spec section 9).
+--
+-- Applied by `python -m app.db init`, which runs this script in a single
+-- transaction. Every object uses IF NOT EXISTS, so the script is idempotent
+-- and can be run again at any time (for example on every deployment).
+--
+-- The script contains no BEGIN/COMMIT: the caller owns the transaction, and
+-- psql runs the statements in autocommit mode.
 
 -- Sites table
 CREATE TABLE IF NOT EXISTS sites (
@@ -34,6 +37,10 @@ CREATE TABLE IF NOT EXISTS checks (
     total_ms INTEGER,
     resolved_ip TEXT,
     cert_expires_at TIMESTAMP WITH TIME ZONE,
+    -- Flag of spec section 8.3.1: the certificate expires within the warning
+    -- period. It is a flag, not a result code, so the check itself still
+    -- counts as OK/SLOW.
+    cert_expiring_soon BOOLEAN DEFAULT FALSE,
     error_detail TEXT
 );
 
@@ -67,5 +74,3 @@ CREATE TABLE IF NOT EXISTS alert_log (
 
 -- Index for recent alerts
 CREATE INDEX IF NOT EXISTS idx_alert_log_site_sent ON alert_log (site_id, sent_at DESC);
-
-COMMIT;
