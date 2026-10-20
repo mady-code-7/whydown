@@ -1,0 +1,114 @@
+"""Shared pytest fixtures for the WhyDown test suite.
+
+The autouse ``no_real_network`` fixture makes the suite hermetic: any attempt
+to open a connection to a non-loopback address, or to resolve a hostname
+other than localhost, fails immediately. A future test can therefore never
+silently depend on the real internet - it has to use the local mock server on
+127.0.0.1 or monkeypatch the stage functions.
+
+Tests that already monkeypatch ``socket.getaddrinfo`` or ``socket.socket.connect``
+keep working: the test's own patch is applied after this fixture and therefore
+takes precedence.
+"""
+
+from __future__ import annotations
+
+import ipaddress
+import socket
+
+import pytest
+
+# Host names that may be resolved during a test run. "localhost" resolves from
+# the local hosts file, so it never touches the network.
+LOCAL_HOSTNAMES = frozenset(
+    {
+        "",
+        "localhost",
+        "localhost.localdomain",
+        "ip6-localhost",
+        "ip6-loopback",
+    }
+)
+
+
+class RealNetworkAccessError(BaseException):
+    """Raised when a test tries to use the real network.
+
+    It derives from BaseException on purpose: the application code catches
+    ``Exception`` very broadly (a failing check must never break a run), and
+    this error must not be swallowed by that safety net. It has to reach
+    pytest so the offending test fails loudly.
+    """
+
+
+def _is_local_target(host: object) -> bool:
+    """Return True if the given host refers to the local machine."""
+    if host is None:
+        # getaddrinfo(None, ...) means "the local host".
+        return True
+    if isinstance(host, bytes):
+        host = host.decode("utf-8", errors="replace")
+    if not isinstance(host, str):
+        return False
+    if host in LOCAL_HOSTNAMES:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _describe(host: object) -> str:
+    """Human readable description of a host argument."""
+    if isinstance(host, bytes):
+        return host.decode("utf-8", errors="replace")
+    return str(host)
+
+
+@pytest.fixture(autouse=True)
+def no_real_network(monkeypatch):
+    """Block DNS lookups and connections to anything but the loopback device."""
+    real_getaddrinfo = socket.getaddrinfo
+    real_gethostbyname = socket.gethostbyname
+    real_connect = socket.socket.connect
+    real_create_connection = socket.create_connection
+
+    def guarded_getaddrinfo(host, port, *args, **kwargs):
+        if _is_local_target(host):
+            return real_getaddrinfo(host, port, *args, **kwargs)
+        raise RealNetworkAccessError(
+            f"Real DNS lookup of {_describe(host)!r} is not allowed in tests. "
+            "Monkeypatch socket.getaddrinfo or app.checker.resolve_dns instead."
+        )
+
+    def guarded_gethostbyname(host, *args, **kwargs):
+        if _is_local_target(host):
+            return real_gethostbyname(host, *args, **kwargs)
+        raise RealNetworkAccessError(
+            f"Real DNS lookup of {_describe(host)!r} is not allowed in tests."
+        )
+
+    def guarded_connect(self, address):
+        host = address[0] if isinstance(address, tuple) else address
+        if _is_local_target(host):
+            return real_connect(self, address)
+        raise RealNetworkAccessError(
+            f"Real connection to {_describe(host)!r} is not allowed in tests. "
+            "Use a loopback mock server or monkeypatch app.checker.connect_tcp."
+        )
+
+    def guarded_create_connection(address, *args, **kwargs):
+        host = address[0] if isinstance(address, tuple) else address
+        if not _is_local_target(host):
+            raise RealNetworkAccessError(
+                f"Real connection to {_describe(host)!r} is not allowed in tests. "
+                "Use a loopback mock server or monkeypatch app.checker.connect_tcp."
+            )
+        return real_create_connection(address, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", guarded_getaddrinfo)
+    monkeypatch.setattr(socket, "gethostbyname", guarded_gethostbyname)
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
+    monkeypatch.setattr(socket, "create_connection", guarded_create_connection)
+
+    yield

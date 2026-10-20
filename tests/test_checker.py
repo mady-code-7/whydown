@@ -27,15 +27,23 @@ class _FakeSocket:
 class TestDNSResolution:
     """Tests for DNS resolution."""
 
-    def test_successful_dns_resolution(self):
-        """Test successful DNS resolution."""
-        success, ip, elapsed_ms, error = resolve_dns("example.com", timeout=5.0)
+    def test_successful_dns_resolution(self, monkeypatch):
+        """Test successful DNS resolution (resolver is mocked, no network)."""
+
+        def mock_getaddrinfo(*args, **kwargs):
+            return [
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0)),
+            ]
+
+        monkeypatch.setattr(socket, "getaddrinfo", mock_getaddrinfo)
+
+        success, ip, elapsed_ms, error = resolve_dns("monitored.test", timeout=5.0)
 
         assert success is True
-        assert ip is not None
+        assert ip == "93.184.216.34"
         assert elapsed_ms is not None
+        assert elapsed_ms >= 0
         assert error is None
-        # Should resolve to an IP address
 
     def test_dns_timeout(self, monkeypatch):
         """Test DNS resolution timeout."""
@@ -62,7 +70,7 @@ class TestDNSResolution:
 
         monkeypatch.setattr(socket, "getaddrinfo", mock_getaddrinfo)
 
-        success, ip, elapsed_ms, error = resolve_dns("invalid-domain-12345.com", timeout=5.0)
+        success, ip, elapsed_ms, error = resolve_dns("invalid-domain-12345.invalid", timeout=5.0)
 
         assert success is False
         assert ip is None
@@ -393,12 +401,23 @@ class TestClassifier:
 class TestCheckUrlIntegration:
     """Integration tests for complete URL checking."""
 
-    def test_check_http_url(self):
-        """Test checking an HTTP URL."""
+    def test_check_http_url(self, monkeypatch):
+        """Test checking an HTTP URL (all network stages are mocked)."""
+        monkeypatch.setattr(
+            "app.checker.resolve_dns",
+            lambda hostname, timeout=5.0: (True, "93.184.216.34", 1.0, None),
+        )
+        monkeypatch.setattr(
+            "app.checker.connect_tcp",
+            lambda ip, port, timeout=8.0: (True, _FakeSocket(), 2.0, None),
+        )
+        monkeypatch.setattr(
+            "app.checker.do_http",
+            lambda *args, **kwargs: (True, 200, 5, 20.0, 25.0, "hello", None),
+        )
 
-        # Check example.com
         result = check_url(
-            "http://example.com",
+            "http://monitored.test",
             slow_threshold_ms=5000,
             cert_expiry_warning_days=7,
         )
@@ -407,15 +426,34 @@ class TestCheckUrlIntegration:
         assert result.dns_success is True
         assert result.tcp_success is True
         assert result.http_success is True
-        assert result.status_code is not None
+        assert result.status_code == 200
+        assert result.resolved_ip == "93.184.216.34"
         assert result.total_ms is not None
         assert result.result == "OK"
 
-    def test_check_https_url(self):
-        """Test checking an HTTPS URL."""
-        # Check https://httpbin.org (should work)
+    def test_check_https_url(self, monkeypatch):
+        """Test checking an HTTPS URL (all network stages are mocked)."""
+        monkeypatch.setattr(
+            "app.checker.resolve_dns",
+            lambda hostname, timeout=5.0: (True, "93.184.216.34", 1.0, None),
+        )
+        monkeypatch.setattr(
+            "app.checker.connect_tcp",
+            lambda ip, port, timeout=8.0: (True, _FakeSocket(), 2.0, None),
+        )
+        monkeypatch.setattr(
+            "app.checker.do_tls",
+            lambda *args, **kwargs: (
+                True, _FakeSocket(), 3.0, None, {"subject": {}}, None, False, False, False,
+            ),
+        )
+        monkeypatch.setattr(
+            "app.checker.do_http",
+            lambda *args, **kwargs: (True, 200, 5, 20.0, 25.0, "hello", None),
+        )
+
         result = check_url(
-            "https://httpbin.org",
+            "https://monitored.test",
             slow_threshold_ms=5000,
             cert_expiry_warning_days=7,
         )
@@ -423,8 +461,12 @@ class TestCheckUrlIntegration:
         assert result is not None
         assert result.dns_success is True
         assert result.tcp_success is True
-        # TLS may succeed or fail depending on the site, but we should have results
+        assert result.tls_success is True
+        assert result.http_success is True
+        assert result.status_code == 200
+        assert result.tls_ms == 3.0
         assert result.total_ms is not None
+        assert result.result == "OK"
 
     def test_check_invalid_url(self):
         """Test checking an invalid URL."""
@@ -449,7 +491,7 @@ class TestCheckUrlIntegration:
         monkeypatch.setattr("app.checker.resolve_dns", mock_resolve_dns)
 
         result = check_url(
-            "http://example.com",  # Actual hostname
+            "http://monitored.test",  # Actual hostname
             slow_threshold_ms=5000,
             cert_expiry_warning_days=7,
         )
@@ -486,7 +528,7 @@ class TestCheckUrlFailureClassification:
 
         monkeypatch.setattr(socket.socket, "connect", mock_connect)
 
-        result = check_url("http://example.com")
+        result = check_url("http://monitored.test")
 
         assert result.result == "CONNECT_TIMEOUT"
         assert result.failed_stage == "tcp"
@@ -502,7 +544,7 @@ class TestCheckUrlFailureClassification:
 
         monkeypatch.setattr(socket.socket, "connect", mock_connect)
 
-        result = check_url("http://example.com")
+        result = check_url("http://monitored.test")
 
         assert result.result == "CONNECTION_REFUSED"
         assert result.failed_stage == "tcp"
@@ -629,7 +671,7 @@ class TestCheckUrlSafetyNet:
 
         monkeypatch.setattr("app.checker.parse_url", boom)
 
-        result = check_url("http://example.com")
+        result = check_url("http://monitored.test")
 
         assert result.result == "INTERNAL_ERROR"
         assert result.failed_stage == "unknown"
@@ -651,7 +693,7 @@ class TestCheckUrlSafetyNet:
             ),
         )
 
-        result = check_url("https://example.com")
+        result = check_url("https://monitored.test")
 
         assert result.result == "TLS_ERROR"
         assert result.failed_stage == "tls"
@@ -672,7 +714,7 @@ class TestCheckUrlSafetyNet:
             ),
         )
 
-        result = check_url("http://example.com")
+        result = check_url("http://monitored.test")
 
         assert result.result == "READ_TIMEOUT"
         assert result.failed_stage == "http"
@@ -709,7 +751,7 @@ class TestCheckUrlTiming:
 
         monkeypatch.setattr("app.checker.resolve_dns", slow_dns)
 
-        result = check_url("http://example.com", slow_threshold_ms=5000)
+        result = check_url("http://monitored.test", slow_threshold_ms=5000)
 
         assert result.dns_ms == 100.0
         assert result.total_ms >= result.dns_ms
@@ -720,7 +762,7 @@ class TestCheckUrlTiming:
         """A slow resolver gets its own code instead of the generic SLOW."""
         self._stub_stages(monkeypatch, dns_ms=6000.0)
 
-        result = check_url("http://example.com", slow_threshold_ms=5000)
+        result = check_url("http://monitored.test", slow_threshold_ms=5000)
 
         assert result.result == "DNS_SLOW"
         # Nothing failed, so no stage is marked as failed.
