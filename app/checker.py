@@ -16,13 +16,21 @@ import socket
 import ssl
 import time
 from dataclasses import dataclass
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
 from .classifier import classify_result
+from .security import is_private_ip
 
 logger = logging.getLogger(__name__)
+
+# OpenSSL X509_V_ERR_* verification codes. The ssl module does not expose these
+# constants, but SSLCertVerificationError.verify_code carries one of them so we
+# can tell an expired certificate (CERT_EXPIRED) from any other verification
+# failure (CERT_INVALID), e.g. hostname mismatch or an untrusted chain.
+X509_V_ERR_CERT_NOT_YET_VALID = 9
+X509_V_ERR_CERT_HAS_EXPIRED = 10
 
 
 @dataclass
@@ -49,6 +57,7 @@ class CheckResult:
     # IP and certificate info
     resolved_ip: str | None = None
     cert_info: dict[str, Any] | None = None
+    cert_expires_at: datetime | None = None
 
     # Error information
     error_message: str | None = None
@@ -100,36 +109,6 @@ def parse_url(url: str) -> tuple[bool, str | None, str | None, str | None, str |
         return False, None, None, None, None, str(e), None
 
 
-def is_private_ip(ip: str) -> bool:
-    """Check if an IP address is private, loopback, or link-local (SSRF protection)."""
-    try:
-        addr = socket.inet_aton(ip)
-
-        # Check loopback (127.0.0.0/8)
-        if addr[0] == 127:
-            return True
-
-        # Check private ranges
-        # 10.0.0.0/8
-        if addr[0] == 10:
-            return True
-
-        # 172.16.0.0/12
-        if addr[0] == 172 and 16 <= addr[1] <= 31:
-            return True
-
-        # 192.168.0.0/16
-        if addr[0] == 192 and addr[1] == 168:
-            return True
-
-        # 169.254.0.0/16 (link-local)
-        if addr[0] == 169 and addr[1] == 254:
-            return True
-
-        # Check multicast (224.0.0.0/4)
-        return addr[0] in range(224, 240)
-    except Exception:
-        return True  # Block on error
 
 
 def resolve_dns(hostname: str, timeout: float = 5.0) -> tuple[bool, str | None, float | None, str | None]:
@@ -205,65 +184,64 @@ def connect_tcp(ip: str, port: str, timeout: float = 8.0) -> tuple[bool, socket.
         return False, None, None, str(e)
 
 
-def check_certificate(expiry_date: str | None, hostname: str) -> tuple[bool, bool, bool]:
-    """Check certificate validity.
+def check_certificate(
+    expiry_date: str | None,
+    warning_days: int = 7,
+) -> tuple[bool, bool, datetime | None]:
+    """Check certificate expiry and compute how long the certificate has left.
+
+    The 'notAfter' value is parsed with ssl.cert_time_to_seconds(), which
+    handles the OpenSSL format ("May 26 23:59:59 2024 GMT") including the
+    double space used for single digit days.
 
     Args:
-        expiry_date: The 'notAfter' value from certificate
-        hostname: The hostname to match against
+        expiry_date: The 'notAfter' value from the certificate
+        warning_days: Days before expiry at which the certificate is flagged
+            as expiring soon (configurable, not hardcoded)
 
     Returns:
-        Tuple of (is_expired, is_expiring_soon, is_invalid)
+        Tuple of (is_expired, is_expiring_soon, cert_expires_at)
+        cert_expires_at is a timezone-aware datetime, or None if unknown.
     """
-    is_expired = False
-    is_expiring_soon = False
-    is_invalid = False
-
     if not expiry_date:
         # Can't verify cert without expiry date
-        return is_expired, is_expiring_soon, is_invalid
+        return False, False, None
 
     try:
-        # Parse certificate expiry date
-        # OpenSSL format: "May 26 23:59:59 2024 GMT"
-        # or "Aug  7 12:00:00 2024 GMT" (note extra space for day < 10)
-        from datetime import datetime
+        expires_epoch = ssl.cert_time_to_seconds(expiry_date)
+        cert_expires_at = datetime.fromtimestamp(expires_epoch, tz=UTC)
 
-        # Normalize the date string
-        expiry_date = expiry_date.strip()
-        if len(expiry_date.split()[0]) == 1:  # Single digit day
-            expiry_date = expiry_date.replace(expiry_date.split()[0],
-                                               "0" + expiry_date.split()[0], 1)
-
-        # Try parsing
-        cert_expiry = datetime.strptime(expiry_date, "%b %d %H:%M:%S %Y %Z")
-        cert_expiry = cert_expiry.replace(tzinfo=UTC)
-
-        now = datetime.now(UTC)
-        days_until_expiry = (cert_expiry - now).days
+        seconds_remaining = expires_epoch - time.time()
+        days_until_expiry = seconds_remaining / 86400
 
         if days_until_expiry < 0:
-            is_expired = True
-        elif days_until_expiry <= 7:  # CERT_EXPIRY_WARNING_DAYS
-            is_expiring_soon = True
+            return True, False, cert_expires_at
+        if days_until_expiry <= warning_days:
+            return False, True, cert_expires_at
+
+        return False, False, cert_expires_at
     except Exception as e:
         logger.debug(f"Failed to parse cert expiry date: {e}")
+        return False, False, None
 
-    return is_expired, is_expiring_soon, is_invalid
 
-
-def do_tls(tcp_sock: socket.socket, hostname: str, timeout: float = 10.0) -> tuple[bool, ssl.SSLSocket | None, float | None, str | None, dict[str, Any] | None, bool, bool, bool]:
+def do_tls(tcp_sock: socket.socket, hostname: str, timeout: float = 10.0,
+          warning_days: int = 7) -> tuple[bool, ssl.SSLSocket | None, float | None, str | None,
+                                         dict[str, Any] | None, datetime | None, bool, bool, bool]:
     """Perform TLS handshake on an existing TCP socket.
 
     Args:
         tcp_sock: Already connected TCP socket
         hostname: Hostname for SNI and certificate validation
         timeout: TLS handshake timeout in seconds
+        warning_days: Days before expiry at which the certificate is flagged
+            as expiring soon (configurable via CERT_EXPIRY_WARNING_DAYS env var)
 
     Returns:
         Tuple of (success, ssl_socket, elapsed_ms, error_message, cert_info,
-                  cert_expired, cert_expiring_soon, cert_invalid)
+                  cert_expires_at, cert_expired, cert_expiring_soon, cert_invalid)
         On success, returns an SSL-wrapped socket that the caller must close.
+        cert_expires_at is a timezone-aware datetime, or None if unknown.
     """
     try:
         start_time = time.perf_counter()
@@ -282,6 +260,7 @@ def do_tls(tcp_sock: socket.socket, hostname: str, timeout: float = 10.0) -> tup
 
         # Extract certificate info
         cert_info = None
+        cert_expires_at = None
         cert_expired = False
         cert_expiring_soon = False
         cert_invalid = False
@@ -290,7 +269,9 @@ def do_tls(tcp_sock: socket.socket, hostname: str, timeout: float = 10.0) -> tup
             # Get raw certificate for expiry check
             not_after = cert.get('notAfter')
             if not_after:
-                cert_expired, cert_expiring_soon, cert_invalid = check_certificate(not_after, hostname)
+                cert_expired, cert_expiring_soon, cert_expires_at = check_certificate(
+                    not_after, warning_days
+                )
 
             cert_info = {
                 "subject": dict(x[0] for x in cert.get('subject', [])) if cert.get('subject') else {},
@@ -301,28 +282,30 @@ def do_tls(tcp_sock: socket.socket, hostname: str, timeout: float = 10.0) -> tup
                 "subjectAltName": cert.get('subjectAltName', []),
             }
 
-        return True, ssl_sock, elapsed_ms, None, cert_info, cert_expired, cert_expiring_soon, cert_invalid
+        return True, ssl_sock, elapsed_ms, None, cert_info, cert_expires_at, cert_expired, cert_expiring_soon, cert_invalid
     except ssl.SSLCertVerificationError as e:
-        # Certificate verification failed
+        # Certificate verification failed. verify_code tells us whether the
+        # certificate itself is expired (CERT_EXPIRED) or the failure is some
+        # other trust problem (CERT_INVALID, e.g. hostname mismatch).
         elapsed_ms = (time.perf_counter() - start_time) * 1000
-        # Check if it's expired or just hostname mismatch
-        cert_expired, cert_expiring_soon, cert_invalid = False, False, False
-        err_msg = str(e)
+        verify_code = getattr(e, "verify_code", None)
+        cert_expired = verify_code in (
+            X509_V_ERR_CERT_NOT_YET_VALID,
+            X509_V_ERR_CERT_HAS_EXPIRED,
+        )
+        cert_invalid = not cert_expired
+        # Expiry flags are unknown here: the handshake failed before we could
+        # read the certificate's notAfter date.
+        cert_expiring_soon = False
+        cert_expires_at = None
 
-        if "expired" in err_msg.lower():
-            cert_expired = True
-        elif "hostname" in err_msg.lower() or "name match" in err_msg.lower():
-            cert_invalid = True
-        else:
-            cert_invalid = True
-
-        return False, None, elapsed_ms, f"Certificate error: {e}", None, cert_expired, cert_expiring_soon, cert_invalid
+        return False, None, elapsed_ms, f"Certificate error: {e}", None, cert_expires_at, cert_expired, cert_expiring_soon, cert_invalid
     except ssl.SSLError as e:
-        return False, None, None, f"TLS error: {e}", None, False, False, False
+        return False, None, None, f"TLS error: {e}", None, None, False, False, False
     except TimeoutError:
-        return False, None, None, "TLS handshake timeout", None, False, False, False
+        return False, None, None, "TLS handshake timeout", None, None, False, False, False
     except Exception as e:
-        return False, None, None, str(e), None, False, False, False
+        return False, None, None, str(e), None, None, False, False, False
 
 
 def do_http(sock: socket.socket | ssl.SSLSocket, path: str, hostname: str,
@@ -401,6 +384,7 @@ def check_url(
     url: str,
     slow_threshold_ms: int = 5000,
     cert_expiry_warning_days: int = 7,
+    expected_status: int = 200,
     timeouts: NetworkTimeouts | None = None,
     expected_keyword: str | None = None,
 ) -> CheckResult:
@@ -413,7 +397,10 @@ def check_url(
     Args:
         url: The URL to check (http or https)
         slow_threshold_ms: Threshold for slow status (milliseconds)
-        cert_expiry_warning_days: Days before expiry to trigger warning
+        cert_expiry_warning_days: Days before expiry to trigger the
+            cert_expiring_soon flag (configurable, not hardcoded)
+        expected_status: HTTP status code the site is expected to return
+            (default 200). A matching 3xx is OK, not an error.
         timeouts: Network timeout configuration
         expected_keyword: Optional keyword to search in response body
 
@@ -448,20 +435,21 @@ def check_url(
         result.result, result.failed_stage = classify_result(
             dns_success=False, tcp_success=False, tls_success=False, http_success=False,
             status_code=None, ttfb_ms=None, total_ms=None, slow_threshold_ms=slow_threshold_ms,
-            keyword_found=None
+            keyword_found=None, expected_status=expected_status
         )
         return result
 
     result.dns_success = True
     result.resolved_ip = ip
 
-    # SSRF check - block private IPs
+    # SSRF check - block private/loopback/link-local IPs after DNS resolution.
+    # A blocked target gets its own code so it is not reported as a DNS failure.
     if is_private_ip(ip):
         result.dns_success = False
         result.error_message = f"SSRF blocked: {ip} is a private/loopback address"
         result.failed_stage = "dns"
         result.total_ms = (time.perf_counter() - overall_start) * 1000
-        result.result = "DNS_FAILURE"
+        result.result = "BLOCKED_TARGET"
         return result
 
     # Step 3: TCP Connection
@@ -478,7 +466,7 @@ def check_url(
         result.result, result.failed_stage = classify_result(
             dns_success=True, tcp_success=False, tls_success=False, http_success=False,
             status_code=None, ttfb_ms=None, total_ms=None, slow_threshold_ms=slow_threshold_ms,
-            keyword_found=None
+            keyword_found=None, expected_status=expected_status
         )
         return result
 
@@ -488,12 +476,13 @@ def check_url(
     # Step 4: TLS Handshake (for HTTPS)
     sock = tcp_sock
     if scheme == "https":
-        tls_success, ssl_sock, tls_ms, tls_error, cert_info, cert_expired, cert_expiring_soon, cert_invalid = do_tls(
-            tcp_sock, hostname, timeouts.tls_timeout
+        tls_success, ssl_sock, tls_ms, tls_error, cert_info, cert_expires_at, cert_expired, cert_expiring_soon, cert_invalid = do_tls(
+            tcp_sock, hostname, timeouts.tls_timeout, warning_days=cert_expiry_warning_days
         )
         result.tls_success = tls_success
         result.tls_ms = tls_ms
         result.cert_info = cert_info
+        result.cert_expires_at = cert_expires_at
         result.cert_expired = cert_expired
         result.cert_expiring_soon = cert_expiring_soon
         result.cert_invalid = cert_invalid
@@ -503,13 +492,12 @@ def check_url(
             result.failed_stage = "tls"
             result.total_ms = (time.perf_counter() - overall_start) * 1000
 
-            # Determine specific TLS error
+            # Determine specific TLS error. CERT_EXPIRING is no longer a
+            # result code: it is a flag (cert_expiring_soon) surfaced later.
             if cert_expired:
                 result.result = "CERT_EXPIRED"
             elif cert_invalid:
                 result.result = "CERT_INVALID"
-            elif cert_expiring_soon:
-                result.result = "CERT_EXPIRING"
             else:
                 result.result = "TLS_ERROR"
 
@@ -536,10 +524,11 @@ def check_url(
         result.error_message = http_error
         result.failed_stage = "http"
 
-        if "timeout" in str(http_error).lower() or http_error is None:
-            result.result = "READ_TIMEOUT"
-        else:
-            result.result = "HTTP_5XX"
+        # A dropped/closed connection is a connection-level failure, not an
+        # HTTP error: it must not be reported as HTTP_5XX.
+        # Dropped/closed connections are connection-level failures, not an
+        # HTTP error: they must not be reported as HTTP_5XX.
+        result.result = "READ_TIMEOUT"
 
         # Clean up socket
         try:
@@ -564,6 +553,7 @@ def check_url(
         total_ms=total_ms,
         slow_threshold_ms=slow_threshold_ms,
         keyword_found=result.keyword_found,
+        expected_status=expected_status,
         cert_expired=result.cert_expired,
         cert_expiring_soon=result.cert_expiring_soon,
         cert_invalid=result.cert_invalid

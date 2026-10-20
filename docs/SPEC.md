@@ -129,13 +129,21 @@ For each enabled site, on each run:
 | `DNS_SLOW` | DNS succeeded but took unusually long | Slow resolver |
 | `CONNECT_TIMEOUT` | TCP connection did not complete in time | Server down, firewall dropping packets |
 | `CONNECTION_REFUSED` | Server actively rejected the connection | Service not running on that port |
-| `TLS_ERROR` | Handshake failed | Protocol mismatch, bad configuration |
-| `CERT_EXPIRED` | Certificate expired | Missed renewal |
-| `CERT_INVALID` | Hostname mismatch or untrusted certificate | Wrong certificate, self-signed |
-| `CERT_EXPIRING` (warning) | Certificate expires within N days | Renewal needed soon |
-| `READ_TIMEOUT` | Connected but no response in time | Application hung |
-| `HTTP_4XX` / `HTTP_5XX` | Unexpected status code | Client or server error |
+| `BLOCKED_TARGET` | Resolved IP was private/loopback/link-local (SSRF) blocked | Internal address, SSRF attempt blocked |
+| `TLS_ERROR` | Handshake failed for a non-certificate reason | Protocol mismatch, bad configuration |
+| `CERT_EXPIRED` | Certificate expired (X509 verify code CERT_HAS_EXPIRED) | Missed renewal |
+| `CERT_INVALID` | Certificate failed verification (hostname mismatch, untrusted, ...) | Wrong certificate, self-signed |
+| `READ_TIMEOUT` | Connected but no response in time (includes dropped connection) | Application hung |
+| `HTTP_3XX` | A 3xx was returned and did not match expected_status (no redirect followed) | Misconfiguration, unexpected redirect |
+| `HTTP_4XX` / `HTTP_5XX` | Unexpected 4xx/5xx status code | Client or server error |
 | `KEYWORD_MISSING` | Page loaded but expected text absent | Broken page, wrong content |
+
+> **Certificate-expiry warning is a flag, not a result code.** Instead of a
+> `CERT_EXPIRING` classification, the checker records `cert_expires_at` (parsed
+> with `ssl.cert_time_to_seconds()` into a timestamp) and a boolean
+> `cert_expiring_soon` flag (expiry within `CERT_EXPIRY_WARNING_DAYS`, env-configurable
+> and no longer hardcoded to 7). A site whose certificate is expiring soon keeps its
+> `OK`/`SLOW` result; alerting uses the flag and fires once per threshold crossing.
 
 ### 8.4 Incidents and alerts
 - A site enters an **incident** after **N consecutive failures** (default 2) to avoid alerts on a single blip.
@@ -269,7 +277,7 @@ For certificate cases, use a local server with a self-signed certificate (invali
 | T06 | HTTP 500 | `HTTP_5XX` |
 | T07 | Expired certificate | `CERT_EXPIRED` |
 | T08 | Hostname mismatch certificate | `CERT_INVALID` |
-| T09 | Certificate expiring in under N days | `CERT_EXPIRING` warning, one alert only |
+| T09 | Certificate expiring in under N days | `cert_expiring_soon` flag set (result stays OK/SLOW), one alert only |
 | T10 | One failure then success | No incident opened |
 | T11 | N consecutive failures | Incident opened, exactly one DOWN alert |
 | T12 | Failures continue | No repeated alerts |

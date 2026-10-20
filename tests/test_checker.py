@@ -22,7 +22,6 @@ class TestDNSResolution:
         assert elapsed_ms is not None
         assert error is None
         # Should resolve to an IP address
-        assert "example.com" == "example.com"  # Just checking hostname is valid
 
     def test_dns_timeout(self, monkeypatch):
         """Test DNS resolution timeout."""
@@ -186,6 +185,59 @@ class TestClassifier:
         assert result == "SLOW"
         assert stage is None
 
+    def test_classify_tcp_timeout(self):
+        """Test that a TCP timeout yields CONNECT_TIMEOUT, not CONNECTION_REFUSED."""
+        result, stage = classify_result(
+            dns_success=True,
+            tcp_success=False,
+            tls_success=False,
+            http_success=False,
+            status_code=None,
+            ttfb_ms=None,
+            total_ms=None,
+            slow_threshold_ms=5000,
+            tcp_error="Connection timeout",
+        )
+
+        assert result == "CONNECT_TIMEOUT"
+        assert stage == "tcp"
+
+    def test_classify_3xx_matches_expected(self):
+        """Test 3xx status matching expected_status continues as OK."""
+        result, stage = classify_result(
+            dns_success=True,
+            tcp_success=True,
+            tls_success=True,
+            http_success=True,
+            status_code=301,
+            ttfb_ms=100.0,
+            total_ms=200.0,
+            slow_threshold_ms=5000,
+            keyword_found=None,
+            expected_status=301,
+        )
+
+        assert result == "OK"
+        assert stage is None
+
+    def test_classify_3xx_not_expected(self):
+        """Test 3xx status not matching expected_status yields HTTP_3XX."""
+        result, stage = classify_result(
+            dns_success=True,
+            tcp_success=True,
+            tls_success=True,
+            http_success=True,
+            status_code=301,
+            ttfb_ms=100.0,
+            total_ms=200.0,
+            slow_threshold_ms=5000,
+            keyword_found=None,
+            expected_status=200,
+        )
+
+        assert result == "HTTP_3XX"
+        assert stage == "http"
+
     def test_classify_dns_failure(self):
         """Test classification of DNS failure."""
         result, stage = classify_result(
@@ -340,8 +392,7 @@ class TestCheckUrlIntegration:
         assert result.result != "OK"
 
     def test_check_private_ip_blocked(self, monkeypatch):
-        """Test that private IP addresses are blocked (SSRF)."""
-        # Mock DNS resolution to return a private IP
+        """Test that private IP addresses are blocked (SSRF -> BLOCKED_TARGET)."""
 
         def mock_resolve_dns(hostname, timeout=5.0):
             return True, "192.168.1.1", 10.0, None
@@ -354,7 +405,7 @@ class TestCheckUrlIntegration:
             cert_expiry_warning_days=7,
         )
 
-        # The check should detect the private IP and block it
         assert result is not None
-        # Since we mocked DNS, it should detect private IP
-        assert result.result == "DNS_FAILURE"  # Or similar SSRF block message
+        # Since we mocked DNS to resolve to a private IP, it should be blocked
+        assert result.result == "BLOCKED_TARGET"
+        assert result.failed_stage == "dns"
