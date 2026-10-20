@@ -395,6 +395,10 @@ def check_url(
     expected_status: int = 200,
     timeouts: NetworkTimeouts | None = None,
     expected_keyword: str | None = None,
+    # Test-only escape hatch for the SSRF filter: when True the checker can
+    # reach the loopback address (127.0.0.1 / 10.* / 192.168.*). It is OFF by
+    # default and is only ever set by tests - never by application code.
+    allow_private: bool = False,
 ) -> CheckResult:
     """Perform a complete URL check with all stages.
 
@@ -411,6 +415,9 @@ def check_url(
             (default 200). A matching 3xx is OK, not an error.
         timeouts: Network timeout configuration
         expected_keyword: Optional keyword to search in response body
+        allow_private: Test-only switch that skips the SSRF filter, so the
+            checker can reach the loopback address of a local mock server.
+            OFF by default; it must never be enabled in production.
 
     Returns:
         CheckResult with all stage timings and classification
@@ -424,6 +431,7 @@ def check_url(
             expected_status=expected_status,
             timeouts=timeouts,
             expected_keyword=expected_keyword,
+            allow_private=allow_private,
         )
     except Exception as exc:
         # A single bad site must never break the run: the error is logged and
@@ -444,6 +452,8 @@ def _run_check(
     expected_status: int = 200,
     timeouts: NetworkTimeouts | None = None,
     expected_keyword: str | None = None,
+    # Test-only: bypass the SSRF filter for loopback addresses.
+    allow_private: bool = False,
 ) -> CheckResult:
     """Run the DNS -> TCP -> TLS -> HTTP stages for a single URL.
 
@@ -490,7 +500,9 @@ def _run_check(
 
     # SSRF check - block private/loopback/link-local IPs after DNS resolution.
     # A blocked target gets its own code so it is not reported as a DNS failure.
-    if is_private_ip(ip):
+    # allow_private is a test-only switch (OFF by default) that lets the
+    # checker reach the local mock server.
+    if not allow_private and is_private_ip(ip):
         result.dns_success = False
         result.error_message = f"SSRF blocked: {ip} is a private/loopback address"
         result.failed_stage = "dns"

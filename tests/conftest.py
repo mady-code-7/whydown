@@ -18,6 +18,11 @@ import socket
 
 import pytest
 
+# The mock failure server and its fixture live in their own module; the
+# fixture is re-exported here so that every test can simply ask for
+# "mock_server".
+from mock_server import mock_server  # noqa: F401
+
 # Host names that may be resolved during a test run. "localhost" resolves from
 # the local hosts file, so it never touches the network.
 LOCAL_HOSTNAMES = frozenset(
