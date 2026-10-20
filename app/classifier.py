@@ -20,6 +20,7 @@ def classify_result(
     cert_expiring_soon: bool = False,
     cert_invalid: bool = False,
     tcp_error: str | None = None,
+    dns_ms: float | None = None,
 ) -> tuple[str, str | None]:
     """Classify the result of a check into a status code and failed stage.
 
@@ -40,6 +41,7 @@ def classify_result(
         cert_expiring_soon: True if certificate expires within warning period
         cert_invalid: True if certificate invalid (hostname mismatch, untrusted, etc.)
         tcp_error: Optional error message from TCP stage to distinguish timeout/refused
+        dns_ms: DNS resolution time in milliseconds, used for the DNS_SLOW case
 
     Returns:
         Tuple of (result_code, failed_stage)
@@ -96,9 +98,15 @@ def classify_result(
     if keyword_found is False:
         return "KEYWORD_MISSING", "http"
 
-    # 10. Slow response
+    # 10. Slow DNS: the resolver was the bottleneck. Reported separately from
+    # SLOW because the fix is different (resolver/DNS, not the web server).
+    if dns_ms is not None and dns_ms > slow_threshold_ms:
+        return "DNS_SLOW", None
+
+    # 11. Slow response: the total time of the check (which includes every
+    # stage) exceeded the threshold.
     if total_ms is not None and total_ms > slow_threshold_ms:
         return "SLOW", None
 
-    # 11. All good
+    # 12. All good
     return "OK", None

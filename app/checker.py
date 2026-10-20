@@ -15,6 +15,7 @@ import logging
 import socket
 import ssl
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -47,6 +48,8 @@ class CheckResult:
     tcp_ms: float | None = None
     tls_ms: float | None = None
     ttfb_ms: float | None = None
+    # Total time of the whole check (DNS + TCP + TLS + HTTP), not just the
+    # HTTP stage: this is the number compared against the slow threshold.
     total_ms: float | None = None
 
     # HTTP data
@@ -105,10 +108,9 @@ def parse_url(url: str) -> tuple[bool, str | None, str | None, str | None, str |
             path = "/" + path
 
         return True, parsed.scheme, parsed.hostname, str(port), path, None, None
-    except Exception as e:
+    except ValueError as e:
+        # urlparse raises ValueError for malformed URLs (e.g. a bad port).
         return False, None, None, None, None, str(e), None
-
-
 
 
 def resolve_dns(hostname: str, timeout: float = 5.0) -> tuple[bool, str | None, float | None, str | None]:
@@ -145,7 +147,9 @@ def resolve_dns(hostname: str, timeout: float = 5.0) -> tuple[bool, str | None, 
         return False, None, None, f"DNS resolution failed: {e}"
     except TimeoutError:
         return False, None, None, "DNS resolution timeout"
-    except Exception as e:
+    except (OSError, UnicodeError) as e:
+        # Any other resolver failure (socket error, bad IDNA hostname) is
+        # still a DNS failure.
         return False, None, None, str(e)
 
 
@@ -180,8 +184,9 @@ def connect_tcp(ip: str, port: str, timeout: float = 8.0) -> tuple[bool, socket.
         if "Connection refused" in str(e):
             return False, None, None, "Connection refused"
         return False, None, None, f"Connection failed: {e}"
-    except Exception as e:
-        return False, None, None, str(e)
+    except ValueError as e:
+        # Invalid port number.
+        return False, None, None, f"Invalid port: {e}"
 
 
 def check_certificate(
@@ -220,7 +225,7 @@ def check_certificate(
             return False, True, cert_expires_at
 
         return False, False, cert_expires_at
-    except Exception as e:
+    except (ValueError, OverflowError, OSError) as e:
         logger.debug(f"Failed to parse cert expiry date: {e}")
         return False, False, None
 
@@ -304,7 +309,9 @@ def do_tls(tcp_sock: socket.socket, hostname: str, timeout: float = 10.0,
         return False, None, None, f"TLS error: {e}", None, None, False, False, False
     except TimeoutError:
         return False, None, None, "TLS handshake timeout", None, None, False, False, False
-    except Exception as e:
+    except (OSError, ValueError) as e:
+        # ssl.SSLError is an OSError subclass and is handled above; anything
+        # else here is a socket-level failure during the handshake.
         return False, None, None, str(e), None, None, False, False, False
 
 
@@ -323,8 +330,12 @@ def do_http(sock: socket.socket | ssl.SSLSocket, path: str, hostname: str,
         Tuple of (success, status_code, response_size, ttfb_ms, total_ms,
                   response_body, error_message)
     """
+    start_time = time.perf_counter()
     try:
-        start_time = time.perf_counter()
+        # The socket inherits the connect timeout from connect_tcp; the read
+        # timeout of this stage is applied here so that a hung server is
+        # reported as a read timeout.
+        sock.settimeout(timeout)
 
         # Send HTTP request
         request = f"GET {path} HTTP/1.1\r\nHost: {hostname}\r\nConnection: close\r\n\r\n"
@@ -332,51 +343,48 @@ def do_http(sock: socket.socket | ssl.SSLSocket, path: str, hostname: str,
 
         # Use makefile to read the response properly
         f = sock.makefile('rb')
+        try:
+            # Read status line. The first byte of the response arrives here,
+            # so this is the real time to first byte (TTFB).
+            status_line = f.readline().decode('utf-8', errors='replace').strip()
+            ttfb_ms = (time.perf_counter() - start_time) * 1000
 
-        # Read status line
-        status_line = f.readline().decode('utf-8', errors='replace').strip()
-        ttfb_ms = (time.perf_counter() - start_time) * 1000
+            if not status_line:
+                return False, None, None, None, None, None, "No response received"
 
-        if not status_line:
-            f.close()
-            return False, None, None, None, None, None, "No response received"
+            # Parse status line
+            parts = status_line.split(' ', 2)
+            if len(parts) < 2:
+                return False, None, None, None, None, None, f"Invalid response: {status_line}"
 
-        # Parse status line
-        parts = status_line.split(' ', 2)
-        if len(parts) < 2:
-            f.close()
-            return False, None, None, None, None, None, f"Invalid response: {status_line}"
+            status_code = int(parts[1]) if parts[1].isdigit() else None
 
-        status_code = int(parts[1]) if parts[1].isdigit() else None
+            # Read headers until blank line
+            while True:
+                line = f.readline().decode('utf-8', errors='replace')
+                if line.strip() == '' or not line:
+                    break
 
-        # Read headers until blank line
-        while True:
-            line = f.readline().decode('utf-8', errors='replace')
-            if line.strip() == '':
-                break
-            if not line:
-                break
+            # Read response body, limited to max_body_size + 1 to detect truncation
+            body = f.read(max_body_size + 1)
+            total_ms = (time.perf_counter() - start_time) * 1000
 
-        ttfb_ms = (time.perf_counter() - start_time) * 1000
-
-        # Read response body, limited to max_body_size + 1 to detect truncation
-        body = f.read(max_body_size + 1)
-        total_ms = (time.perf_counter() - start_time) * 1000
-
-        response_size = len(body)
-        if response_size > max_body_size:
-            body = body[:max_body_size]
             response_size = len(body)
+            if response_size > max_body_size:
+                body = body[:max_body_size]
+                response_size = len(body)
 
-        response_body = body.decode('utf-8', errors='replace')
+            response_body = body.decode('utf-8', errors='replace')
 
-        f.close()
-
-        return True, status_code, response_size, ttfb_ms, total_ms, response_body, None
+            return True, status_code, response_size, ttfb_ms, total_ms, response_body, None
+        finally:
+            # Closing the makefile also closes the underlying socket.
+            with suppress(OSError):
+                f.close()
     except TimeoutError:
         total_ms = (time.perf_counter() - start_time) * 1000
         return False, None, None, None, total_ms, None, "HTTP read timeout"
-    except Exception as e:
+    except (OSError, ValueError) as e:
         return False, None, None, None, None, None, str(e)
 
 
@@ -390,9 +398,9 @@ def check_url(
 ) -> CheckResult:
     """Perform a complete URL check with all stages.
 
-    Uses a single connection through all stages:
-    resolve DNS -> connect TCP -> (HTTPS: wrap with TLS) -> send HTTP request
-    over the same socket (TLS socket for HTTPS).
+    This is the public entry point and it never raises: an unexpected error is
+    caught and reported as an INTERNAL_ERROR result, so that a single bad
+    site can never stop a check run (spec section 10).
 
     Args:
         url: The URL to check (http or https)
@@ -406,6 +414,44 @@ def check_url(
 
     Returns:
         CheckResult with all stage timings and classification
+    """
+    start = time.perf_counter()
+    try:
+        return _run_check(
+            url,
+            slow_threshold_ms=slow_threshold_ms,
+            cert_expiry_warning_days=cert_expiry_warning_days,
+            expected_status=expected_status,
+            timeouts=timeouts,
+            expected_keyword=expected_keyword,
+        )
+    except Exception as exc:
+        # A single bad site must never break the run: the error is logged and
+        # reported as a result instead of propagating.
+        logger.exception("Unexpected error while checking %s", url)
+        result = CheckResult()
+        result.result = "INTERNAL_ERROR"
+        result.failed_stage = "unknown"
+        result.error_message = f"Unexpected error: {exc}"
+        result.total_ms = (time.perf_counter() - start) * 1000
+        return result
+
+
+def _run_check(
+    url: str,
+    slow_threshold_ms: int = 5000,
+    cert_expiry_warning_days: int = 7,
+    expected_status: int = 200,
+    timeouts: NetworkTimeouts | None = None,
+    expected_keyword: str | None = None,
+) -> CheckResult:
+    """Run the DNS -> TCP -> TLS -> HTTP stages for a single URL.
+
+    Uses a single connection through all stages:
+    resolve DNS -> connect TCP -> (HTTPS: wrap with TLS) -> send HTTP request
+    over the same socket (TLS socket for HTTPS).
+
+    See check_url() for the arguments and the returned CheckResult.
     """
     if timeouts is None:
         timeouts = NetworkTimeouts()
@@ -466,7 +512,7 @@ def check_url(
         result.result, result.failed_stage = classify_result(
             dns_success=True, tcp_success=False, tls_success=False, http_success=False,
             status_code=None, ttfb_ms=None, total_ms=None, slow_threshold_ms=slow_threshold_ms,
-            keyword_found=None, expected_status=expected_status
+            keyword_found=None, expected_status=expected_status, tcp_error=tcp_error
         )
         return result
 
@@ -492,6 +538,11 @@ def check_url(
             result.failed_stage = "tls"
             result.total_ms = (time.perf_counter() - overall_start) * 1000
 
+            # The handshake failed, so no SSL socket exists: close the plain
+            # TCP socket instead of leaking it.
+            with suppress(OSError):
+                tcp_sock.close()
+
             # Determine specific TLS error. CERT_EXPIRING is no longer a
             # result code: it is a flag (cert_expiring_soon) surfaced later.
             if cert_expired:
@@ -510,7 +561,7 @@ def check_url(
         result.tls_ms = 0
 
     # Step 5: HTTP Request
-    http_success, status_code, response_size, ttfb_ms, total_ms, response_body, http_error = do_http(
+    http_success, status_code, response_size, ttfb_ms, _http_total_ms, response_body, http_error = do_http(
         sock, path, hostname, timeouts.read_timeout
     )
 
@@ -518,7 +569,10 @@ def check_url(
     result.status_code = status_code
     result.response_size = response_size
     result.ttfb_ms = ttfb_ms
-    result.total_ms = total_ms
+    # total_ms is the time of the whole check (DNS + TCP + TLS + HTTP), not
+    # just the HTTP stage: this is what the site owner experiences and what
+    # the slow threshold is compared against.
+    result.total_ms = (time.perf_counter() - overall_start) * 1000
 
     if not http_success:
         result.error_message = http_error
@@ -526,15 +580,11 @@ def check_url(
 
         # A dropped/closed connection is a connection-level failure, not an
         # HTTP error: it must not be reported as HTTP_5XX.
-        # Dropped/closed connections are connection-level failures, not an
-        # HTTP error: they must not be reported as HTTP_5XX.
         result.result = "READ_TIMEOUT"
 
         # Clean up socket
-        try:
+        with suppress(OSError):
             sock.close()
-        except Exception:
-            pass
 
         return result
 
@@ -550,19 +600,18 @@ def check_url(
         http_success=True,
         status_code=status_code,
         ttfb_ms=ttfb_ms,
-        total_ms=total_ms,
+        total_ms=result.total_ms,
         slow_threshold_ms=slow_threshold_ms,
         keyword_found=result.keyword_found,
         expected_status=expected_status,
         cert_expired=result.cert_expired,
         cert_expiring_soon=result.cert_expiring_soon,
-        cert_invalid=result.cert_invalid
+        cert_invalid=result.cert_invalid,
+        dns_ms=result.dns_ms,
     )
 
     # Clean up socket
-    try:
+    with suppress(OSError):
         sock.close()
-    except Exception:
-        pass
 
     return result

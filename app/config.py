@@ -83,7 +83,7 @@ class Config:
         # Validate database URL
         try:
             urlparse(self.database.url)
-        except Exception as e:
+        except ValueError as e:
             errors.append(f"Invalid DATABASE_URL: {e}")
 
         # Validate required alert config

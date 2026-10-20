@@ -1,13 +1,27 @@
 """Tests for network checking functions."""
 
+import socket
+import time
+
 import pytest
 
 from app.checker import (
     check_url,
     connect_tcp,
+    do_http,
     resolve_dns,
 )
 from app.classifier import classify_result
+
+
+class _FakeSocket:
+    """Minimal socket stand-in that records whether it was closed."""
+
+    def __init__(self):
+        self.closed = False
+
+    def close(self):
+        self.closed = True
 
 
 class TestDNSResolution:
@@ -340,6 +354,41 @@ class TestClassifier:
         assert result == "KEYWORD_MISSING"
         assert stage == "http"
 
+    def test_classify_dns_slow(self):
+        """A slow resolver gets its own code."""
+        result, stage = classify_result(
+            dns_success=True,
+            tcp_success=True,
+            tls_success=True,
+            http_success=True,
+            status_code=200,
+            ttfb_ms=100.0,
+            total_ms=6100.0,
+            slow_threshold_ms=5000,
+            dns_ms=6000.0,
+        )
+
+        assert result == "DNS_SLOW"
+        # Nothing failed, so no stage is marked as failed.
+        assert stage is None
+
+    def test_classify_failure_wins_over_dns_slow(self):
+        """A hard failure is never masked by a slow resolver."""
+        result, stage = classify_result(
+            dns_success=True,
+            tcp_success=False,
+            tls_success=False,
+            http_success=False,
+            status_code=None,
+            ttfb_ms=None,
+            total_ms=None,
+            slow_threshold_ms=5000,
+            dns_ms=6000.0,
+        )
+
+        assert result == "CONNECTION_REFUSED"
+        assert stage == "tcp"
+
 
 class TestCheckUrlIntegration:
     """Integration tests for complete URL checking."""
@@ -409,3 +458,270 @@ class TestCheckUrlIntegration:
         # Since we mocked DNS to resolve to a private IP, it should be blocked
         assert result.result == "BLOCKED_TARGET"
         assert result.failed_stage == "dns"
+
+
+class TestCheckUrlFailureClassification:
+    """Failures observed through check_url must be classified precisely.
+
+    The classifier can tell a connect timeout from a refused connection only
+    when the TCP stage's error message is passed on, so these tests cover the
+    wiring between the stage functions and the classifier.
+    """
+
+    @staticmethod
+    def _mock_dns(monkeypatch, ip="93.184.216.34"):
+        monkeypatch.setattr(
+            "app.checker.resolve_dns",
+            lambda hostname, timeout=5.0: (True, ip, 1.0, None),
+        )
+
+    def test_connect_timeout_is_classified_as_connect_timeout(self, monkeypatch):
+        """A TCP connect that times out must not be reported as refused."""
+        import socket
+
+        self._mock_dns(monkeypatch)
+
+        def mock_connect(self, address):
+            raise TimeoutError("timed out")
+
+        monkeypatch.setattr(socket.socket, "connect", mock_connect)
+
+        result = check_url("http://example.com")
+
+        assert result.result == "CONNECT_TIMEOUT"
+        assert result.failed_stage == "tcp"
+
+    def test_connection_refused_is_classified_as_refused(self, monkeypatch):
+        """A TCP connect that is actively refused must be CONNECTION_REFUSED."""
+        import socket
+
+        self._mock_dns(monkeypatch)
+
+        def mock_connect(self, address):
+            raise ConnectionRefusedError("Connection refused")
+
+        monkeypatch.setattr(socket.socket, "connect", mock_connect)
+
+        result = check_url("http://example.com")
+
+        assert result.result == "CONNECTION_REFUSED"
+        assert result.failed_stage == "tcp"
+
+    def test_dns_failure_is_classified_as_dns_failure(self, monkeypatch):
+        """A hostname that does not resolve must fail at the dns stage."""
+        import socket
+
+        def mock_getaddrinfo(*args, **kwargs):
+            raise socket.gaierror(-2, "Name or service not known")
+
+        monkeypatch.setattr(socket, "getaddrinfo", mock_getaddrinfo)
+
+        result = check_url("http://does-not-exist.invalid")
+
+        assert result.result == "DNS_FAILURE"
+        assert result.failed_stage == "dns"
+        assert result.error_message is not None
+
+
+class TestDoHttp:
+    """Tests for the HTTP stage, driven against a local socket."""
+
+    @pytest.fixture
+    def local_server(self):
+        """Factory starting a one-shot TCP server with a custom handler."""
+        import threading
+
+        started = []
+
+        def start(handler):
+            server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            server.bind(("127.0.0.1", 0))
+            port = server.getsockname()[1]
+            server.listen(1)
+
+            def serve():
+                try:
+                    client, _ = server.accept()
+                except OSError:
+                    return
+                try:
+                    handler(client)
+                finally:
+                    client.close()
+
+            thread = threading.Thread(target=serve, daemon=True)
+            thread.start()
+            started.append((server, thread))
+            return port
+
+        yield start
+
+        for server, thread in started:
+            server.close()
+            thread.join(timeout=2)
+
+    def test_ttfb_is_the_time_to_first_byte(self, local_server):
+        """TTFB must not include the time spent reading the body."""
+        def handler(client):
+            client.recv(4096)
+            client.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\n")
+            time.sleep(0.3)
+            client.sendall(b"hello")
+
+        port = local_server(handler)
+        sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+
+        success, status_code, size, ttfb_ms, total_ms, body, error = do_http(
+            sock, "/", "127.0.0.1", timeout=5
+        )
+
+        assert success is True
+        assert error is None
+        assert status_code == 200
+        assert body == "hello"
+        assert size == 5
+        # The body arrived 0.3s later, so the first byte must be much earlier.
+        assert total_ms >= 300
+        assert ttfb_ms < total_ms - 100
+
+    def test_read_timeout_when_server_never_replies(self, local_server):
+        """A server that accepts but never answers is a read timeout."""
+        port = local_server(lambda client: time.sleep(2))
+        sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+
+        success, _status_code, _size, _ttfb, _total, body, error = do_http(
+            sock, "/", "127.0.0.1", timeout=0.5
+        )
+
+        assert success is False
+        assert error == "HTTP read timeout"
+        assert body is None
+
+    def test_dropped_connection_is_reported(self, local_server):
+        """A connection closed before any byte arrives is not a success."""
+        port = local_server(lambda client: None)
+        sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+
+        success, _status, _size, _ttfb, _total, body, error = do_http(
+            sock, "/", "127.0.0.1", timeout=5
+        )
+
+        assert success is False
+        assert error is not None
+        assert body is None
+
+
+class TestCheckUrlSafetyNet:
+    """A check must never raise and must never leak a socket."""
+
+    @staticmethod
+    def _stub_dns(monkeypatch, ip="93.184.216.34"):
+        monkeypatch.setattr(
+            "app.checker.resolve_dns",
+            lambda hostname, timeout=5.0: (True, ip, 1.0, None),
+        )
+
+    def test_unexpected_error_is_reported_as_internal_error(self, monkeypatch):
+        """An unexpected exception is classified, not raised."""
+        def boom(url):
+            raise RuntimeError("kaboom")
+
+        monkeypatch.setattr("app.checker.parse_url", boom)
+
+        result = check_url("http://example.com")
+
+        assert result.result == "INTERNAL_ERROR"
+        assert result.failed_stage == "unknown"
+        assert "kaboom" in result.error_message
+        assert result.total_ms is not None
+
+    def test_tls_failure_closes_the_tcp_socket(self, monkeypatch):
+        """A failed handshake must not leave the TCP socket open."""
+        sock = _FakeSocket()
+        self._stub_dns(monkeypatch)
+        monkeypatch.setattr(
+            "app.checker.connect_tcp",
+            lambda ip, port, timeout=8.0: (True, sock, 1.0, None),
+        )
+        monkeypatch.setattr(
+            "app.checker.do_tls",
+            lambda *args, **kwargs: (
+                False, None, 1.0, "handshake failed", None, None, False, False, False,
+            ),
+        )
+
+        result = check_url("https://example.com")
+
+        assert result.result == "TLS_ERROR"
+        assert result.failed_stage == "tls"
+        assert sock.closed is True
+
+    def test_http_failure_closes_the_socket(self, monkeypatch):
+        """A failed HTTP stage must not leave the socket open."""
+        sock = _FakeSocket()
+        self._stub_dns(monkeypatch)
+        monkeypatch.setattr(
+            "app.checker.connect_tcp",
+            lambda ip, port, timeout=8.0: (True, sock, 1.0, None),
+        )
+        monkeypatch.setattr(
+            "app.checker.do_http",
+            lambda *args, **kwargs: (
+                False, None, None, None, None, None, "connection dropped",
+            ),
+        )
+
+        result = check_url("http://example.com")
+
+        assert result.result == "READ_TIMEOUT"
+        assert result.failed_stage == "http"
+        assert sock.closed is True
+
+
+class TestCheckUrlTiming:
+    """total_ms must cover the whole check, not just the HTTP stage."""
+
+    @staticmethod
+    def _stub_stages(monkeypatch, dns_ms=1.0, http_total_ms=25.0):
+        monkeypatch.setattr(
+            "app.checker.resolve_dns",
+            lambda hostname, timeout=5.0: (True, "93.184.216.34", dns_ms, None),
+        )
+        monkeypatch.setattr(
+            "app.checker.connect_tcp",
+            lambda ip, port, timeout=8.0: (True, _FakeSocket(), 5.0, None),
+        )
+        monkeypatch.setattr(
+            "app.checker.do_http",
+            lambda *args, **kwargs: (
+                True, 200, 5, 20.0, http_total_ms, "body", None,
+            ),
+        )
+
+    def test_total_ms_covers_the_dns_stage(self, monkeypatch):
+        """The reported total includes the time spent before the request."""
+        self._stub_stages(monkeypatch)
+
+        def slow_dns(hostname, timeout=5.0):
+            time.sleep(0.1)
+            return True, "93.184.216.34", 100.0, None
+
+        monkeypatch.setattr("app.checker.resolve_dns", slow_dns)
+
+        result = check_url("http://example.com", slow_threshold_ms=5000)
+
+        assert result.dns_ms == 100.0
+        assert result.total_ms >= result.dns_ms
+        assert result.total_ms >= result.ttfb_ms
+        assert result.result == "OK"
+
+    def test_slow_dns_is_classified_as_dns_slow(self, monkeypatch):
+        """A slow resolver gets its own code instead of the generic SLOW."""
+        self._stub_stages(monkeypatch, dns_ms=6000.0)
+
+        result = check_url("http://example.com", slow_threshold_ms=5000)
+
+        assert result.result == "DNS_SLOW"
+        # Nothing failed, so no stage is marked as failed.
+        assert result.failed_stage is None

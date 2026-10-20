@@ -136,7 +136,19 @@ For each enabled site, on each run:
 | `READ_TIMEOUT` | Connected but no response in time (includes dropped connection) | Application hung |
 | `HTTP_3XX` | A 3xx was returned and did not match expected_status (no redirect followed) | Misconfiguration, unexpected redirect |
 | `HTTP_4XX` / `HTTP_5XX` | Unexpected 4xx/5xx status code | Client or server error |
+| `INTERNAL_ERROR` | The check raised an unexpected exception (bug or environment issue) | Code defect |
 | `KEYWORD_MISSING` | Page loaded but expected text absent | Broken page, wrong content |
+
+### 8.3.1 Implementation notes
+
+- **`total_ms`** is the time of the whole check (DNS + TCP + TLS + HTTP), not just
+  the HTTP stage. This is what the `SLOW` threshold compares against.
+- **Stage-level thresholds**: when DNS takes longer than the slow threshold the result
+  is `DNS_SLOW`; otherwise `SLOW` is reported when the total exceeds the threshold
+  (a single slow stage also pushes `SLOW` since it inflates the total).
+- **Safety net**: `check_url()` never raises — any unexpected exception is caught,
+  logged and classified as `INTERNAL_ERROR`, so one bad site can never stop a run
+  (spec section 10).
 
 > **Certificate-expiry warning is a flag, not a result code.** Instead of a
 > `CERT_EXPIRING` classification, the checker records `cert_expires_at` (parsed
