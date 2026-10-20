@@ -18,6 +18,20 @@ import socket
 
 import pytest
 
+# The certificate material and the local TLS server live in their own module;
+# the fixtures are re-exported here so that every test can simply ask for
+# "tls_server" or "trust_test_ca".
+from certificates import (  # noqa: F401
+    cert_authority,
+    expired_certificate,
+    expiring_soon_certificate,
+    hostname_mismatch_certificate,
+    self_signed_certificate,
+    tls_server,
+    trust_test_ca,
+    valid_certificate,
+)
+
 # The mock failure server and its fixture live in their own module; the
 # fixture is re-exported here so that every test can simply ask for
 # "mock_server".
