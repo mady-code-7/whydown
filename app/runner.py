@@ -2,12 +2,20 @@
 
 Implements the Phase 3B-1 check runner (spec section 10):
 
-* ``run_all_checks`` loads the enabled sites, checks them concurrently in a
-  thread pool, saves every result and returns a summary.
+* ``run_all_checks`` opens **one** database connection for the whole run and
+  hands it to every database call. Opening a connection is by far the most
+  expensive database operation (about 2.5 s on the free tier), so one
+  connection per call would dominate the runtime of a run.
+* The connection belongs to the main thread. The workers of the thread pool
+  run ``check_url`` and nothing else, so a connection is never used from two
+  threads at the same time.
+* Every result is saved from the main thread as soon as its future
+  completes, and ``save_check`` commits the row. A crash or a run deadline
+  therefore keeps the results that were collected so far.
 * A hard per-site timeout is enforced from outside ``check_url`` using future
   timeouts, so a slow DNS lookup or a stuck site cannot block the run.
 * A total run deadline keeps the run inside the scheduler's request window.
-* One failing site (or a database error while saving) must never stop the run.
+* One failing site (or a failed save) must never stop the run.
 """
 
 from __future__ import annotations
@@ -16,10 +24,11 @@ import logging
 import time
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, wait
+from typing import Any
 
 from .checker import CheckResult, check_url
 from .config import config
-from .db import list_sites, purge_old_checks, save_check
+from .db import _connect, list_sites, purge_old_checks, save_check
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +36,64 @@ logger = logging.getLogger(__name__)
 # Spec section 8.3 has no "total timeout" code, so the closest connection-level
 # timeout code is used: the site never completed its check in time.
 TIMEOUT_RESULT = "CONNECT_TIMEOUT"
+
+
+def _close_connection(conn: Any) -> None:
+    """Close a connection and ignore any error while doing so."""
+    if conn is None:
+        return
+    try:
+        conn.close()
+    except Exception as exc:  # noqa: BLE001 - a failed close must not stop the run
+        logger.warning("Closing the database connection failed (%s)", type(exc).__name__)
+
+
+class _RunConnection:
+    """The single database connection of one check run.
+
+    The connection is opened once, used by the main thread only and closed
+    when the run ends. A failed save triggers one attempt to reopen it, so a
+    broken connection (an aborted transaction) does not take the rest of the
+    run with it.
+
+    When the reopen fails the connection is given up on: a database that is
+    really down would otherwise cost a reconnect attempt (about 2.5 s) for
+    every site of the run.
+    """
+
+    def __init__(self, connect_func: Callable[[], Any]) -> None:
+        self._connect_func = connect_func
+        # A failure here is deliberately not caught: without a connection the
+        # run cannot store a single result, so the error travels to
+        # /run-checks, which answers with a generic 500.
+        self.conn: Any = connect_func()
+        self.save_errors = 0
+        self.broken = False
+
+    def reopen(self) -> None:
+        """Try once to replace the connection with a fresh one.
+
+        When the new connection cannot be opened, the connection is marked as
+        broken: the run continues, but no further connect is attempted.
+        """
+        if self.broken:
+            return
+        try:
+            new_conn = self._connect_func()
+        except Exception as exc:  # noqa: BLE001 - a failed reopen must not stop the run
+            # Only the type of the error is logged: the message of a database
+            # error may contain the connection string (spec section 12).
+            logger.error(
+                "The database connection could not be reopened (%s)", type(exc).__name__
+            )
+            self.broken = True
+            return
+        old_conn, self.conn = self.conn, new_conn
+        _close_connection(old_conn)
+
+    def close(self) -> None:
+        """Close the connection of the run."""
+        _close_connection(self.conn)
 
 
 def _check_site(site: dict[str, object], check_fn: Callable[..., CheckResult]) -> CheckResult:
@@ -60,6 +127,9 @@ def _collect_result(future: Future[CheckResult], site: dict[str, object], record
 
     If the future raises (only possible with a mock in tests), it is recorded as
     an ``INTERNAL_ERROR`` to match the safety net in ``_check_site``.
+
+    This runs in the main thread, so the database connection is only ever
+    used by one thread at a time.
     """
     try:
         result = future.result()
@@ -96,6 +166,10 @@ def _run_sites(
     run_deadline: float,
 ) -> None:
     """Check sites concurrently with per‑site and run deadlines.
+
+    The worker threads only run the check itself; every result is collected
+    and stored by the main thread, which is the only thread that touches the
+    database connection.
 
     The function never lets a single site failure or timeout block the run, and
     it returns after the run deadline has passed or all sites have been checked.
@@ -141,17 +215,21 @@ def run_all_checks(
     *,
     list_sites_func: Callable[..., list[dict[str, object]]] | None = None,
     check_url_func: Callable[..., CheckResult] | None = None,
-    save_check_func: Callable[[int, CheckResult], int] | None = None,
-    purge_func: Callable[[], int] | None = None,
+    save_check_func: Callable[..., int] | None = None,
+    purge_func: Callable[..., int] | None = None,
+    connect_func: Callable[[], Any] | None = None,
     max_workers: int | None = None,
     site_timeout_seconds: float | None = None,
     run_deadline_seconds: float | None = None,
 ) -> dict[str, object]:
     """Load sites and run checks, returning a summary of the run.
 
-    The function never raises: any error (in checks, in database access or in the
-    thread pool) is caught and reported as a result, so one bad site can never
-    stop the run. After all checks are done, ``purge_old_checks`` is called.
+    One database connection is opened at the start of the run and used for
+    every database call; it is closed when the run ends, also when the run
+    fails. The connection is used by the main thread only.
+
+    A failed save is counted in the summary as ``save_errors`` and the
+    connection is reopened once; the run continues with the remaining sites.
     """
     start = time.perf_counter()
 
@@ -160,6 +238,7 @@ def run_all_checks(
     check_fn = check_url_func or check_url
     save_fn = save_check_func or save_check
     purge_fn = purge_func or purge_old_checks
+    connect_fn = connect_func or _connect
 
     # Use overrides if passed, or fall back to config values
     workers = max_workers if max_workers is not None else config.runner.max_workers
@@ -177,23 +256,48 @@ def run_all_checks(
     counts: dict[str, int] = {}
     checked = [0]  # mutable container to allow increments inside _record
 
+    # The one connection of this run. A failure to open it is not caught:
+    # /run-checks turns it into a generic 500.
+    connection = _RunConnection(connect_fn)
+
     def record(site_id: int, result: CheckResult) -> None:
-        save_fn(site_id, result)
+        """Save one result and count it (main thread only)."""
         counts[result.result] = counts.get(result.result, 0) + 1
         checked[0] += 1
-
-    sites = list_sites_fn(enabled_only=True)
-
-    if sites:
-        _run_sites(sites, check_fn, record, workers, site_timeout, run_deadline)
+        try:
+            save_fn(site_id, result, conn=connection.conn)
+        except Exception as exc:  # noqa: BLE001 - a failed save must not stop the run
+            connection.save_errors += 1
+            # Only the type of the error is logged: the message of a database
+            # error may contain the connection string (spec section 12).
+            logger.error(
+                "Saving the check of site %s failed (%s)", site_id, type(exc).__name__
+            )
+            # One attempt to get a working connection back; the run continues
+            # either way.
+            connection.reopen()
 
     try:
-        purge_fn()
-    except Exception:
-        logger.exception("Purge of old checks failed; the run still completed")
+        sites = list_sites_fn(conn=connection.conn, enabled_only=True)
 
-    return {
+        if sites:
+            _run_sites(sites, check_fn, record, workers, site_timeout, run_deadline)
+
+        try:
+            purge_fn(conn=connection.conn)
+        except Exception as exc:  # noqa: BLE001 - a failed purge must not stop the run
+            logger.error(
+                "Purge of old checks failed (%s); the run still completed",
+                type(exc).__name__,
+            )
+    finally:
+        connection.close()
+
+    summary: dict[str, object] = {
         "sites_checked": checked[0],
         "counts": dict(counts),
         "duration_ms": int((time.perf_counter() - start) * 1000),
     }
+    if connection.save_errors:
+        summary["save_errors"] = connection.save_errors
+    return summary
