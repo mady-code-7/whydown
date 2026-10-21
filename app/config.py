@@ -67,6 +67,23 @@ class SiteThresholds:
 
 
 @dataclass(frozen=True)
+class RunnerConfig:
+    """Check-runner configuration (spec section 10).
+
+    These bound how the checker engine runs:
+    * ``max_workers``      - thread pool size for concurrent site checks.
+    * ``site_timeout_seconds`` - hard per-site budget enforced from outside
+      ``check_url``; a site that does not finish in time is recorded as a
+      timeout instead of blocking the run.
+    * ``run_deadline_seconds`` - total wall-clock budget for one run so the
+      scheduler request always completes within its own timeout window.
+    """
+    max_workers: int = 8
+    site_timeout_seconds: int = 10
+    run_deadline_seconds: int = 25
+
+
+@dataclass(frozen=True)
 class Config:
     """Complete configuration for WhyDown."""
     database: DatabaseConfig
@@ -75,6 +92,7 @@ class Config:
     rate_limit: RateLimitConfig = RateLimitConfig()
     network_timeouts: NetworkTimeouts = NetworkTimeouts()
     thresholds: SiteThresholds = SiteThresholds()
+    runner: RunnerConfig = RunnerConfig()
 
     def validate(self) -> list[str]:
         """Validate configuration and return list of errors."""
@@ -99,6 +117,18 @@ class Config:
         # Validate numeric ranges
         if self.database.timeout <= 0:
             errors.append("DATABASE_TIMEOUT must be positive")
+
+        # Runner config validation
+        if self.runner.max_workers < 1:
+            errors.append("MAX_WORKERS must be at least 1")
+        if self.runner.site_timeout_seconds < 1:
+            errors.append("SITE_TIMEOUT_SECONDS must be at least 1")
+        if self.runner.run_deadline_seconds < 1:
+            errors.append("RUN_DEADLINE_SECONDS must be at least 1")
+        if self.runner.run_deadline_seconds <= self.runner.site_timeout_seconds:
+            errors.append(
+                "RUN_DEADLINE_SECONDS must be greater than SITE_TIMEOUT_SECONDS"
+            )
 
         return errors
 
@@ -169,6 +199,13 @@ def load_config() -> Config:
         incident_threshold=int(os.getenv("INCIDENT_THRESHOLD", "2")),
     )
 
+    # Parse runner config
+    runner = RunnerConfig(
+        max_workers=int(os.getenv("MAX_WORKERS", "8")),
+        site_timeout_seconds=int(os.getenv("SITE_TIMEOUT_SECONDS", "10")),
+        run_deadline_seconds=int(os.getenv("RUN_DEADLINE_SECONDS", "25")),
+    )
+
     return Config(
         database=database,
         app=app,
@@ -176,6 +213,7 @@ def load_config() -> Config:
         rate_limit=rate_limit,
         network_timeouts=network_timeouts,
         thresholds=thresholds,
+        runner=runner,
     )
 
 
