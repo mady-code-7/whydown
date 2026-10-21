@@ -24,6 +24,7 @@ class AppConfig:
     secret_key: str = "dev-secret-key"
     admin_password: str = "admin"
     max_sites: int = 20
+    cron_secret: str = ""
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,25 @@ class AlertConfig:
     email_port: int = 587
     email_user: str = ""
     email_pass: str = ""
+
+
+# Minimum length of a usable CRON_SECRET. A shorter value is treated as
+# "not set": a weak secret must never open the /run-checks endpoint.
+CRON_SECRET_MIN_LENGTH = 16
+
+
+def load_cron_secret() -> str:
+    """Read CRON_SECRET from the environment.
+
+    Returns the secret, or an empty string when it is unset or shorter than
+    ``CRON_SECRET_MIN_LENGTH``. The value is never logged, printed or put
+    into an error message (spec section 12: secrets live in environment
+    variables and never end up in a log).
+    """
+    secret = os.getenv("CRON_SECRET", "").strip()
+    if len(secret) < CRON_SECRET_MIN_LENGTH:
+        return ""
+    return secret
 
 
 @dataclass(frozen=True)
@@ -164,6 +184,9 @@ def load_config() -> Config:
         email_pass=os.getenv("EMAIL_PASS", ""),
     )
 
+    # Parse cron secret (min 16 chars; weaker values are treated as unset)
+    cron_secret = load_cron_secret()
+
     # Parse app config
     app = AppConfig(
         host=os.getenv("FLASK_HOST", "0.0.0.0"),
@@ -172,6 +195,7 @@ def load_config() -> Config:
         secret_key=os.getenv("SECRET_KEY", "dev-secret-key"),
         admin_password=os.getenv("ADMIN_PASSWORD", "admin"),
         max_sites=int(os.getenv("MAX_SITES", "20")),
+        cron_secret=cron_secret,
     )
 
     # Parse rate limit config
