@@ -1,0 +1,10 @@
+{# The page that is shown when the database cannot be read.
+
+   The message is fixed text: it never contains a traceback, an exception
+   message or anything from the connection string (spec section 12). #}
+{% extends "base.html" %}
+{% block title %}WhyDown - not available{% endblock %}
+{% block content %}
+  <h1>Not available right now</h1>
+  <p class="error">The dashboard could not be loaded. Please try again in a moment.</p>
+{% endblock %}

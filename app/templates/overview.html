@@ -1,0 +1,61 @@
+{# The overview of the dashboard (spec section 8.5).
+
+   Every value comes from the database and is printed with the normal
+   Jinja2 escaping - the |safe filter is never used, so a site name can
+   never inject markup into the page. #}
+{% extends "base.html" %}
+{% block title %}WhyDown - overview{% endblock %}
+{% block content %}
+  <h1>Overview</h1>
+
+  <section class="summary" aria-label="Summary of the monitored sites">
+    <div class="tile">
+      <span class="tile-value">{{ total_count }}</span>
+      <span class="tile-label">Sites monitored</span>
+    </div>
+    <div class="tile">
+      <span class="tile-value">{{ up_count }}</span>
+      <span class="tile-label">Up now</span>
+    </div>
+    <div class="tile">
+      <span class="tile-value">{{ down_count }}</span>
+      <span class="tile-label">Down now</span>
+    </div>
+  </section>
+
+  {% if unknown_count %}
+    <p class="note">{{ unknown_count }} site{{ "" if unknown_count == 1 else "s" }} without a check yet - not counted as up or down.</p>
+  {% endif %}
+
+  {% if sites %}
+    <table class="sites">
+      <thead>
+        <tr>
+          <th scope="col">Site</th>
+          <th scope="col">URL</th>
+          <th scope="col">Status</th>
+          <th scope="col">Uptime 24 h</th>
+          <th scope="col">Uptime 7 d</th>
+          <th scope="col">Last checked</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for site in sites %}
+          <tr>
+            {# The name is plain text for now - it becomes a link with the
+               site detail page. The URL is plain text as well, so a stored
+               "javascript:" URL can never be executed. #}
+            <td data-label="Site">{{ site.name }}</td>
+            <td data-label="URL">{{ site.url }}</td>
+            <td data-label="Status"><span class="badge badge-{{ site.badge_class }}">{{ site.badge_label }}</span></td>
+            <td data-label="Uptime 24 h">{{ site.uptime_24h_text }}</td>
+            <td data-label="Uptime 7 d">{{ site.uptime_7d_text }}</td>
+            <td data-label="Last checked">{{ site.last_checked_text }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">No sites yet</p>
+  {% endif %}
+{% endblock %}

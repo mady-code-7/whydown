@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}WhyDown{% endblock %}</title>
+  {# The stylesheet is served by this application itself - no external
+     stylesheet, no external font and no external script is loaded. #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <p class="brand">WhyDown</p>
+      <p class="tagline">Not just if a website is down, but why.</p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>WhyDown - uptime and network diagnostics for your own sites.</p>
+    </div>
+  </footer>
+</body>
+</html>

@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from functools import wraps
 from typing import Any
 
-from flask import Flask, current_app, jsonify, request
+from flask import Flask, current_app, jsonify, render_template, request
 
 from . import db
 from .config import CRON_SECRET_MIN_LENGTH, config, load_cron_secret
@@ -278,6 +278,125 @@ def _api_incidents() -> tuple[Any, int]:
     return jsonify(incidents), 200
 
 
+# --------------------------------------------------------------------------
+# Dashboard (spec section 8.5)
+# --------------------------------------------------------------------------
+
+# The dashboard and the API read the database the same way: one connection
+# per request, closed in a finally block, also when a query fails.
+_request_connection = _api_connection
+
+# CSS class of the status badge for a result code (spec section 8.3). A
+# success is green, a slow but working site is amber, every other result is
+# red and a site without any check is grey.
+BADGE_CLASSES = {
+    "OK": "ok",
+    "SLOW": "slow",
+    "DNS_SLOW": "slow",
+}
+NO_CHECKS_BADGE = "none"
+NO_CHECKS_LABEL = "no checks yet"
+
+
+def _badge_class(result: Any) -> str:
+    """Return the CSS class of the status badge for a result code."""
+    if not result:
+        return NO_CHECKS_BADGE
+    return BADGE_CLASSES.get(result, "down")
+
+
+def _uptime_text(value: float | None) -> str:
+    """Return the uptime for the page.
+
+    A window without a check has no uptime at all: it shows "no data" and
+    never 0% - a site that was never checked is not the same as a site that
+    was down.
+    """
+    if value is None:
+        return "no data"
+    return f"{value:g}%"
+
+
+def _utc_text(value: Any) -> str:
+    """Return the time of the latest check as UTC.
+
+    A datetime without a time zone is read as UTC, a datetime in another
+    time zone is converted to UTC. A value that is not a datetime is passed
+    through unchanged.
+    """
+    if value is None:
+        return "never"
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return value.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+    return str(value)
+
+
+def _dashboard_sites(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Turn the rows of ``site_summaries`` into the values the page shows."""
+    sites = []
+    for row in rows:
+        result = row.get("latest_result")
+        uptime_24h = _uptime(int(row.get("checks_24h") or 0), int(row.get("up_24h") or 0))
+        uptime_7d = _uptime(int(row.get("checks_7d") or 0), int(row.get("up_7d") or 0))
+        sites.append({
+            "name": row.get("name"),
+            "url": row.get("url"),
+            "result": result or "",
+            "badge_class": _badge_class(result),
+            "badge_label": result or NO_CHECKS_LABEL,
+            "uptime_24h": uptime_24h,
+            "uptime_7d": uptime_7d,
+            "uptime_24h_text": _uptime_text(uptime_24h),
+            "uptime_7d_text": _uptime_text(uptime_7d),
+            "last_checked_text": _utc_text(row.get("latest_checked_at")),
+        })
+    return sites
+
+
+def _dashboard_counts(sites: list[dict[str, Any]]) -> tuple[int, int, int]:
+    """Return how many sites are up now, how many are down and how many
+    have no check yet.
+
+    A site is up when its latest result is one of the up results (a slow
+    but working site is still up, spec section 8.3). A site without any
+    check is neither up nor down - it is counted apart, so a site that was
+    never checked is never reported as a problem.
+    """
+    up = sum(1 for site in sites if site["result"] in db.UP_RESULTS)
+    down = sum(1 for site in sites if site["result"] and site["result"] not in db.UP_RESULTS)
+    return up, down, len(sites) - up - down
+
+
+def _dashboard_overview() -> tuple[Any, int]:
+    """Render the overview page (spec section 8.5).
+
+    A database failure is answered with a 503 page that holds a fixed
+    message: no traceback, no exception text and nothing from the
+    connection string (spec section 12).
+    """
+    try:
+        with _request_connection() as conn:
+            rows = db.site_summaries(conn=conn)
+    except Exception as exc:  # noqa: BLE001 - any database failure is a 503
+        # Only the type of the error is logged: the message of a database
+        # error may contain the connection string (spec section 12).
+        logger.error("Reading the site summaries failed (%s)", type(exc).__name__)
+        return render_template("error.html"), 503
+
+    sites = _dashboard_sites(rows)
+    up_count, down_count, unknown_count = _dashboard_counts(sites)
+    return render_template(
+        "overview.html",
+        sites=sites,
+        total_count=len(sites),
+        up_count=up_count,
+        down_count=down_count,
+        unknown_count=unknown_count,
+    ), 200
+
+
 def call_runner() -> dict[str, object]:
     """Run the check engine and return its summary.
 
@@ -334,12 +453,22 @@ def register(app: Flask) -> None:
     # For now, we'll just register the health endpoint
     # Other routes will be implemented in later phases
 
+    register_dashboard_routes(app)
     register_api_routes(app)
 
 
 # Placeholder functions to be implemented in later phases
 def register_dashboard_routes(app: Flask) -> None:
-    """Register dashboard routes (to be implemented in Phase 3)."""
+    """Register the dashboard (spec section 8.5).
+
+    The dashboard is public and read-only: it reads the state of the sites
+    and never changes anything.
+    """
+
+    @app.get("/")
+    def dashboard():
+        """The overview page: the state of every monitored site."""
+        return _dashboard_overview()
 
 
 def register_api_routes(app: Flask) -> None:
