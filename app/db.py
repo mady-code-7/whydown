@@ -314,6 +314,95 @@ def uptime_percent(site_id: int, hours: int = 24, conn: Any | None = None) -> fl
 
 
 @_db_errors
+def site_summaries(conn: Any | None = None) -> list[dict[str, Any]]:
+    """Return the state of every site for the dashboard and the API.
+
+    The result holds one entry per site with the site data (id, name, url,
+    enabled), the result and the time of its latest check and the number of
+    checks and up checks of the last 24 hours and the last 7 days.
+
+    The whole list is read with two queries - one for the sites with their
+    latest check, one for the counts per site - so the number of queries never
+    depends on the number of sites.
+
+    OK, SLOW and DNS_SLOW count as up, exactly as in ``uptime_percent``
+    (spec section 8.3). A site without any check has empty windows; the
+    caller decides what an empty window means for the uptime.
+    """
+    sites_query = (
+        "SELECT s.id, s.name, s.url, s.enabled, "
+        "c.result AS latest_result, c.checked_at AS latest_checked_at "
+        "FROM sites s "
+        "LEFT JOIN LATERAL ("
+        "SELECT result, checked_at FROM checks "
+        "WHERE site_id = s.id ORDER BY checked_at DESC, id DESC LIMIT 1"
+        ") c ON TRUE "
+        "ORDER BY s.name"
+    )
+
+    placeholders = ", ".join("%s" for _ in UP_RESULTS)
+    counts_query = (
+        "SELECT site_id, "
+        "COUNT(*) FILTER (WHERE checked_at >= NOW() - (%s * INTERVAL '1 hour')) "
+        "AS checks_24h, "
+        f"COUNT(*) FILTER (WHERE checked_at >= NOW() - (%s * INTERVAL '1 hour') "
+        f"AND result IN ({placeholders})) AS up_24h, "
+        "COUNT(*) FILTER (WHERE checked_at >= NOW() - (%s * INTERVAL '1 day')) "
+        "AS checks_7d, "
+        f"COUNT(*) FILTER (WHERE checked_at >= NOW() - (%s * INTERVAL '1 day') "
+        f"AND result IN ({placeholders})) AS up_7d "
+        "FROM checks WHERE checked_at >= NOW() - (%s * INTERVAL '1 day') "
+        "GROUP BY site_id"
+    )
+    counts_params = (24, 24) + UP_RESULTS + (7, 7) + UP_RESULTS + (7,)
+
+    with _connection(conn) as session, _cursor(session) as cur:
+        cur.execute(sites_query, ())
+        site_rows = cur.fetchall()
+        cur.execute(counts_query, counts_params)
+        count_rows = cur.fetchall()
+
+    counts = {_get(row, "site_id"): row for row in count_rows}
+
+    summaries: list[dict[str, Any]] = []
+    for row in site_rows:
+        count = counts.get(_get(row, "id"), {})
+        summaries.append({
+            "id": _get(row, "id"),
+            "name": _get(row, "name"),
+            "url": _get(row, "url"),
+            "enabled": bool(_get(row, "enabled")),
+            "latest_result": _get(row, "latest_result"),
+            "latest_checked_at": _get(row, "latest_checked_at"),
+            "checks_24h": int(_get(count, "checks_24h", 0) or 0),
+            "up_24h": int(_get(count, "up_24h", 0) or 0),
+            "checks_7d": int(_get(count, "checks_7d", 0) or 0),
+            "up_7d": int(_get(count, "up_7d", 0) or 0),
+        })
+    return summaries
+
+
+@_db_errors
+def list_incidents(limit: int = 50, conn: Any | None = None) -> list[dict[str, Any]]:
+    """Return the incidents, newest first.
+
+    The columns are the ones of the incidents table (spec section 9): id,
+    site_id, started_at, ended_at, failure_type and consecutive_failures.
+    An incident that is still open has no ``ended_at``.
+    """
+    query = (
+        "SELECT id, site_id, started_at, ended_at, failure_type, "
+        "consecutive_failures FROM incidents "
+        "ORDER BY started_at DESC, id DESC LIMIT %s"
+    )
+
+    with _connection(conn) as session, _cursor(session) as cur:
+        cur.execute(query, (limit,))
+        rows = cur.fetchall()
+    return [dict(row) for row in rows]
+
+
+@_db_errors
 def purge_old_checks(days: int = 30, conn: Any | None = None) -> int:
     """Delete check rows older than ``days`` days and return how many went.
 

@@ -7,6 +7,7 @@ replaced by the fake connection from ``fake_db.py``.
 from __future__ import annotations
 
 import ast
+from datetime import UTC, datetime
 from pathlib import Path
 
 import psycopg
@@ -371,6 +372,240 @@ def test_purge_old_checks_without_old_rows_returns_zero(connection):
     connection.responses = [{"rows": [], "rowcount": 0}]
 
     assert db.purge_old_checks() == 0
+
+
+# --------------------------------------------------------------------------
+# Site summaries and incidents (read-only API, Phase 3B-3)
+# --------------------------------------------------------------------------
+
+def test_site_summaries_reads_every_site_with_two_queries(connection):
+    """All sites are read with a fixed number of queries, not one per site."""
+    connection.responses = [
+        [
+            {
+                "id": 1,
+                "name": "Portal",
+                "url": "https://portal.test",
+                "enabled": True,
+                "latest_result": "OK",
+                "latest_checked_at": datetime(2026, 10, 21, 12, 0, tzinfo=UTC),
+            },
+            {
+                "id": 2,
+                "name": "Shop",
+                "url": "https://shop.test",
+                "enabled": False,
+                "latest_result": None,
+                "latest_checked_at": None,
+            },
+        ],
+        [
+            {
+                "site_id": 1,
+                "checks_24h": 10,
+                "up_24h": 9,
+                "checks_7d": 100,
+                "up_7d": 90,
+            }
+        ],
+    ]
+
+    summaries = db.site_summaries()
+
+    # Two queries in total, whatever the number of sites is.
+    assert len(connection.statements) == 2
+    assert [summary["id"] for summary in summaries] == [1, 2]
+
+
+def test_site_summaries_joins_the_windows_to_the_sites(connection):
+    """Every summary holds the site data, the latest check and both windows."""
+    connection.responses = [
+        [
+            {
+                "id": 1,
+                "name": "Portal",
+                "url": "https://portal.test",
+                "enabled": True,
+                "latest_result": "OK",
+                "latest_checked_at": datetime(2026, 10, 21, 12, 0, tzinfo=UTC),
+            }
+        ],
+        [
+            {
+                "site_id": 1,
+                "checks_24h": 10,
+                "up_24h": 9,
+                "checks_7d": 100,
+                "up_7d": 90,
+            }
+        ],
+    ]
+
+    summary = db.site_summaries()[0]
+
+    assert summary["id"] == 1
+    assert summary["name"] == "Portal"
+    assert summary["url"] == "https://portal.test"
+    assert summary["enabled"] is True
+    assert summary["latest_result"] == "OK"
+    assert summary["latest_checked_at"] == datetime(
+        2026, 10, 21, 12, 0, tzinfo=UTC
+    )
+    assert summary["checks_24h"] == 10
+    assert summary["up_24h"] == 9
+    assert summary["checks_7d"] == 100
+    assert summary["up_7d"] == 90
+
+
+def test_site_summaries_gives_a_site_without_checks_zero_counts(connection):
+    """A site without any check has empty windows, not a missing entry."""
+    connection.responses = [
+        [
+            {
+                "id": 2,
+                "name": "Shop",
+                "url": "https://shop.test",
+                "enabled": True,
+                "latest_result": None,
+                "latest_checked_at": None,
+            }
+        ],
+        [],
+    ]
+
+    summary = db.site_summaries()[0]
+
+    assert summary["latest_result"] is None
+    assert summary["latest_checked_at"] is None
+    assert summary["checks_24h"] == 0
+    assert summary["up_24h"] == 0
+    assert summary["checks_7d"] == 0
+    assert summary["up_7d"] == 0
+
+
+def test_site_summaries_counts_ok_slow_and_dns_slow_as_up(connection):
+    """The up count uses the same codes as uptime_percent."""
+    connection.responses = [[], []]
+
+    db.site_summaries()
+
+    statement = connection.statements[1]
+    assert "OK" not in statement.sql
+    assert "SLOW" not in statement.sql
+    assert "DNS_SLOW" not in statement.sql
+    assert "OK" in statement.params
+    assert "SLOW" in statement.params
+    assert "DNS_SLOW" in statement.params
+
+
+def test_site_summaries_uses_parameterised_queries(connection):
+    """The window lengths and the up codes are parameters, not SQL text."""
+    connection.responses = [[], []]
+
+    db.site_summaries()
+
+    counts = connection.statements[1]
+    assert "%s" in counts.sql
+    # The 24 hour and the 7 day window are passed as parameters.
+    assert 24 in counts.params
+    assert 7 in counts.params
+    # No window length is written into the SQL text.
+    assert "INTERVAL '24" not in counts.sql
+    assert "INTERVAL '7" not in counts.sql
+    assert "INTERVAL '1 hour'" in counts.sql
+    assert "INTERVAL '1 day'" in counts.sql
+
+
+def test_site_summaries_uses_a_given_connection(connection):
+    """A caller may hand in its own connection; it is not closed for it."""
+    connection.responses = [[], []]
+
+    db.site_summaries(conn=connection)
+
+    assert connection.connect_calls == []
+    assert connection.closed is False
+
+
+def test_site_summaries_closes_its_own_connection(connection):
+    """Without a given connection the function opens and closes one."""
+    connection.responses = [[], []]
+
+    db.site_summaries()
+
+    assert len(connection.connect_calls) == 1
+    assert connection.closed is True
+
+
+def test_list_incidents_returns_the_newest_incident_first(connection):
+    """list_incidents returns the incidents, newest first."""
+    connection.responses = [
+        [
+            {
+                "id": 5,
+                "site_id": 1,
+                "started_at": datetime(2026, 10, 21, 12, 0, tzinfo=UTC),
+                "ended_at": None,
+                "failure_type": "CONNECT_TIMEOUT",
+                "consecutive_failures": 3,
+            },
+            {
+                "id": 4,
+                "site_id": 2,
+                "started_at": datetime(2026, 10, 20, 12, 0, tzinfo=UTC),
+                "ended_at": datetime(2026, 10, 20, 13, 0, tzinfo=UTC),
+                "failure_type": "HTTP_5XX",
+                "consecutive_failures": 2,
+            },
+        ]
+    ]
+
+    incidents = db.list_incidents(limit=25)
+
+    assert [incident["id"] for incident in incidents] == [5, 4]
+    assert incidents[0]["failure_type"] == "CONNECT_TIMEOUT"
+    assert incidents[0]["consecutive_failures"] == 3
+    assert incidents[1]["ended_at"] == datetime(2026, 10, 20, 13, 0, tzinfo=UTC)
+
+
+def test_list_incidents_uses_a_parameterised_limit(connection):
+    """The limit is passed as a parameter, not formatted into the SQL."""
+    connection.responses = [[]]
+
+    db.list_incidents(limit=10)
+
+    statement = connection.statements[0]
+    assert "LIMIT %s" in statement.sql
+    assert statement.params == (10,)
+    assert "ORDER BY started_at DESC" in statement.sql
+
+
+def test_list_incidents_selects_the_columns_of_the_spec(connection):
+    """The incident columns of spec section 9 are read."""
+    connection.responses = [[]]
+
+    db.list_incidents(limit=5)
+
+    sql = connection.statements[0].sql
+    for column in (
+        "id",
+        "site_id",
+        "started_at",
+        "ended_at",
+        "failure_type",
+        "consecutive_failures",
+    ):
+        assert column in sql
+    assert "FROM incidents" in sql
+
+
+def test_list_incidents_uses_a_given_connection(connection):
+    """A caller may hand in its own connection; it is not closed for it."""
+    connection.responses = [[]]
+
+    db.list_incidents(limit=5, conn=connection)
+
+    assert connection.connect_calls == []
+    assert connection.closed is False
 
 
 # --------------------------------------------------------------------------
