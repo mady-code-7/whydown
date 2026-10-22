@@ -303,6 +303,9 @@ SITE_DETAIL_CHECKS = 100
 SITE_DETAIL_TABLE_ROWS = 20
 CHART_STAGE_CHECKS = 30
 
+# How many incidents the incidents page reads from the database.
+INCIDENTS_LIMIT = 100
+
 
 def _badge_class(result: Any) -> str:
     """Return the CSS class of the status badge for a result code."""
@@ -408,6 +411,16 @@ def _row_id(row: dict[str, Any]) -> int | None:
     """Return the id of a row, or None when it has no usable id."""
     try:
         return int(row.get("id"))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+def _int_value(value: Any) -> int | None:
+    """Return a value as an integer, or None when it is not one."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
     except (TypeError, ValueError):
         return None
 
@@ -557,6 +570,130 @@ def _site_detail(site_id: int) -> tuple[Any, int]:
     ), 200
 
 
+def _utc_now() -> datetime:
+    """Return the current time in UTC.
+
+    It is a function of its own so that a test can hold the clock still
+    while it looks at an incident that is still going on.
+    """
+    return datetime.now(UTC)
+
+
+def _duration_text(seconds: float) -> str:
+    """Return a duration as a short text, e.g. "1h 30m 00s".
+
+    Only the two biggest units are shown for a long duration, so the text
+    stays short enough for a table cell on a phone.
+    """
+    total = max(int(seconds), 0)
+    days, rest = divmod(total, 86400)
+    hours, rest = divmod(rest, 3600)
+    minutes, secs = divmod(rest, 60)
+    if days:
+        return f"{days}d {hours:02d}h {minutes:02d}m"
+    if hours:
+        return f"{hours}h {minutes:02d}m {secs:02d}s"
+    if minutes:
+        return f"{minutes}m {secs:02d}s"
+    return f"{secs}s"
+
+
+def _elapsed_text(start: Any, end: Any) -> str:
+    """Return how long something lasted, or "-" when that is not known.
+
+    A time without a time zone is read as UTC, so a duration is never
+    computed between two times that mean different things.
+    """
+    if not isinstance(start, datetime) or not isinstance(end, datetime):
+        return "-"
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=UTC)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=UTC)
+    return _duration_text((end - start).total_seconds())
+
+
+def _incident_view(
+    row: dict[str, Any], names: dict[int | None, Any], now: datetime
+) -> dict[str, Any]:
+    """Turn one incident row into the values the table of the page shows.
+
+    The name of the site comes from the site summaries. A site that is
+    gone keeps its number in the page, so the incident is still readable
+    (spec section 8.5). Every value is a plain string, so the template
+    can print it with the normal escaping.
+    """
+    site_id = _int_value(row.get("site_id"))
+    name = names.get(site_id)
+    started = row.get("started_at")
+    ended = row.get("ended_at")
+    # An incident without an end is still going on: its duration is the
+    # time since it started.
+    ongoing = ended is None
+    failures = row.get("consecutive_failures")
+
+    if name:
+        site_name = str(name)
+    elif site_id is not None:
+        site_name = f"site #{site_id}"
+    else:
+        site_name = "unknown site"
+
+    return {
+        "id": row.get("id"),
+        "site_id": site_id,
+        "site_name": site_name,
+        "site_known": bool(name),
+        "started_text": _utc_text(started),
+        "ended_text": _utc_text(ended),
+        "ongoing": ongoing,
+        "duration_text": _elapsed_text(started, now if ongoing else ended),
+        "failure_type": row.get("failure_type") or "-",
+        "failures_text": "-" if failures is None else str(failures),
+    }
+
+
+def _incident_sort_key(row: dict[str, Any]) -> tuple[datetime, int]:
+    """Return the key that puts the newest incident first.
+
+    The database already sorts the incidents by their start, but the page
+    sorts them again, so the order of the page never depends on the order
+    of the rows it gets.
+    """
+    started = row.get("started_at")
+    if isinstance(started, datetime):
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=UTC)
+    else:
+        started = datetime.min.replace(tzinfo=UTC)
+    return (started, _int_value(row.get("id")) or 0)
+
+
+def _incidents_page() -> tuple[Any, int]:
+    """Render the incidents page (spec section 8.5).
+
+    The page reads the sites (for their names) and the incidents with one
+    connection for the whole request. A database failure is answered with
+    the same 503 page as the overview: no traceback, no exception text and
+    nothing from the connection string (spec section 12).
+    """
+    try:
+        with _request_connection() as conn:
+            sites = db.site_summaries(conn=conn)
+            rows = db.list_incidents(limit=INCIDENTS_LIMIT, conn=conn)
+    except Exception as exc:  # noqa: BLE001 - any database failure is a 503
+        # Only the type of the error is logged: the message of a database
+        # error may contain the connection string (spec section 12).
+        logger.error("Reading the incidents failed (%s)", type(exc).__name__)
+        return render_template("error.html"), 503
+
+    names = {_int_value(row.get("id")): row.get("name") for row in sites}
+    now = _utc_now()
+    ordered = sorted(rows, key=_incident_sort_key, reverse=True)
+    incidents = [_incident_view(row, names, now) for row in ordered]
+    return render_template("incidents.html", incidents=incidents), 200
+
+
 def call_runner() -> dict[str, object]:
     """Run the check engine and return its summary.
 
@@ -634,6 +771,11 @@ def register_dashboard_routes(app: Flask) -> None:
     def site_detail(site_id: int):
         """The detail page of one site: its timings and its history."""
         return _site_detail(site_id)
+
+    @app.get("/incidents")
+    def incidents():
+        """The list of the incidents, newest first."""
+        return _incidents_page()
 
 
 def register_api_routes(app: Flask) -> None:

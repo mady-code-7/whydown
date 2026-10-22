@@ -1,7 +1,7 @@
 {# The overview of the dashboard (spec section 8.5).
 
    Every value comes from the database and is printed with the normal
-   Jinja2 escaping - the |safe filter is never used, so a site name can
+   Jinja2 escaping - the unsafe filter is never used, so a site name can
    never inject markup into the page. #}
 {% extends "base.html" %}
 {% block title %}WhyDown - overview{% endblock %}

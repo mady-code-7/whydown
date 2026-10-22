@@ -13,6 +13,18 @@
     <div class="wrap">
       <p class="brand">WhyDown</p>
       <p class="tagline">Not just if a website is down, but why.</p>
+
+      {# The navigation of the dashboard. The link of the page that is
+         open is marked with aria-current and a style of its own, so a
+         reader always knows where they are (spec section 8.5). #}
+      {% set active_page = 'incidents' if request.endpoint == 'incidents'
+                           else ('overview' if request.endpoint in ('dashboard', 'site_detail') else '') %}
+      <nav class="site-nav" aria-label="Main">
+        <a class="nav-link{% if active_page == 'overview' %} is-current{% endif %}"
+           href="{{ url_for('dashboard') }}"{% if active_page == 'overview' %} aria-current="page"{% endif %}>Overview</a>
+        <a class="nav-link{% if active_page == 'incidents' %} is-current{% endif %}"
+           href="{{ url_for('incidents') }}"{% if active_page == 'incidents' %} aria-current="page"{% endif %}>Incidents</a>
+      </nav>
     </div>
   </header>
 

@@ -1,0 +1,56 @@
+{# The list of the incidents (spec section 8.5).
+
+   Every value comes from the database and is printed with the normal
+   Jinja2 escaping - the unsafe filter is never used, so a site name or a
+   failure type can never inject markup into the page.
+
+   The table uses the class "sites", so a narrow screen turns it into one
+   card per incident and a phone never has to scroll sideways. #}
+{% extends "base.html" %}
+{% block title %}WhyDown - incidents{% endblock %}
+{% block content %}
+  <h1>Incidents</h1>
+
+  {% if incidents %}
+    <table class="sites incidents">
+      <thead>
+        <tr>
+          <th scope="col">Site</th>
+          <th scope="col">Started (UTC)</th>
+          <th scope="col">Ended (UTC)</th>
+          <th scope="col">Duration</th>
+          <th scope="col">Failure</th>
+          <th scope="col">Failures</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for incident in incidents %}
+          <tr>
+            {# The name of a site links to the detail page of the site.
+               A site that is gone has no page, so it stays plain text. #}
+            <td data-label="Site">
+              {% if incident.site_known %}
+                <a href="{{ url_for('site_detail', site_id=incident.site_id) }}">{{ incident.site_name }}</a>
+              {% else %}
+                {{ incident.site_name }}
+              {% endif %}
+            </td>
+            <td data-label="Started (UTC)">{{ incident.started_text }}</td>
+            <td data-label="Ended (UTC)">
+              {% if incident.ongoing %}
+                <span class="badge badge-down">ongoing</span>
+              {% else %}
+                {{ incident.ended_text }}
+              {% endif %}
+            </td>
+            <td data-label="Duration">{{ incident.duration_text }}</td>
+            <td data-label="Failure">{{ incident.failure_type }}</td>
+            <td data-label="Failures">{{ incident.failures_text }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">No incidents yet</p>
+  {% endif %}
+{% endblock %}

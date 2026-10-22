@@ -24,6 +24,14 @@
 
   --radius: 6px;
 
+  /* The colours of the navigation: the page that is open is a filled
+     chip, every other page is a quiet outline. Both are set here and in
+     the dark mode, so the navigation is readable in both. */
+  --nav-bg: var(--surface);
+  --nav-fg: var(--muted);
+  --nav-current-bg: #0969da;
+  --nav-current-fg: #ffffff;
+
   /* The colour of every link. It is set once here and again in the dark
      mode, so the "All sites" link and any other link are readable in both
      modes and never use the default browser blue. */
@@ -66,6 +74,9 @@
     --chart-ttfb: #bc8cff;
     --link: #4493f8;
     --link-hover: #58a6ff;
+
+    --nav-current-bg: #0d419d;
+    --nav-current-fg: #ffffff;
   }
 }
 
@@ -109,6 +120,48 @@ body {
   margin: 0.15rem 0 0;
   color: var(--muted);
   font-size: 0.95rem;
+}
+
+/* The navigation of the dashboard */
+
+.site-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.nav-link {
+  background: var(--nav-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--nav-fg);
+  display: inline-block;
+  font-size: 0.95rem;
+  padding: 0.25rem 0.9rem;
+  text-decoration: none;
+}
+
+.nav-link:hover,
+.nav-link:focus {
+  border-color: var(--link);
+  color: var(--link-hover);
+  text-decoration: underline;
+}
+
+/* The page that is open: a filled chip with a heavy weight, so the mark
+   is visible in the light and in the dark mode. */
+.nav-link.is-current {
+  background: var(--nav-current-bg);
+  border-color: var(--nav-current-bg);
+  color: var(--nav-current-fg);
+  font-weight: 700;
+}
+
+.nav-link.is-current:hover,
+.nav-link.is-current:focus {
+  color: var(--nav-current-fg);
+  text-decoration: none;
 }
 
 .site-footer {

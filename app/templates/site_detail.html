@@ -1,7 +1,7 @@
 {# The detail page of one site (spec section 8.5).
 
    Every value comes from the database and is printed with the normal
-   Jinja2 escaping - the |safe filter is never used, so a site name or an
+   Jinja2 escaping - the unsafe filter is never used, so a site name or an
    error message can never inject markup into the page.
 
    The chart data is handed to the script of the page as JSON. The JSON
