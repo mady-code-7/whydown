@@ -3,6 +3,8 @@
 The runner feeds every stored check into the incident state machine, so an
 incident opens and closes while the run goes on. These tests replace the
 state machine with a recording fake: no database and no network is used.
+The alert of an incident is replaced by a fake as well, so no message is
+ever sent while the tests run.
 """
 
 from __future__ import annotations
@@ -82,6 +84,22 @@ class FakeRunnerEnv:
             raise self.process_error
         return self.outcomes.get(result.result)
 
+    # -- the incident lookup and the alerts (Phase 4 part B) ---------------
+
+    def get_latest_incident(self, site_id, conn=None):
+        self.calls.append(("get_latest_incident", (site_id,), {"conn": conn}))
+        return {
+            "id": 1,
+            "site_id": site_id,
+            "started_at": None,
+            "ended_at": None,
+            "failure_type": "HTTP_5XX",
+        }
+
+    def send_alert(self, conn, site, incident, kind):
+        self.calls.append(("send_alert", (site["id"], kind), {"conn": conn}))
+        return True
+
     # -- helpers -----------------------------------------------------------
 
     def call_names(self) -> list[str]:
@@ -101,6 +119,8 @@ def env(monkeypatch):
     monkeypatch.setattr(runner, "purge_old_checks", fake.purge_old_checks)
     monkeypatch.setattr(runner, "check_url", fake.check_url)
     monkeypatch.setattr(runner, "process_check", fake.process_check)
+    monkeypatch.setattr(runner, "get_latest_incident", fake.get_latest_incident)
+    monkeypatch.setattr(runner, "send_alert", fake.send_alert)
     return fake
 
 

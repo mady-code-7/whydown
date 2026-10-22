@@ -15,6 +15,8 @@ Implements the Phase 3B-1 check runner (spec section 10):
 * A hard per-site timeout is enforced from outside ``check_url`` using future
   timeouts, so a slow DNS lookup or a stuck site cannot block the run.
 * A total run deadline keeps the run inside the scheduler's request window.
+* When the incident state machine opens or closes an incident, the matching
+  alert is sent (spec section 8.4). A failing alert never stops the run.
 * One failing site (or a failed save) must never stop the run.
 """
 
@@ -26,9 +28,10 @@ from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from typing import Any
 
+from .alerts import KIND_DOWN, KIND_RECOVERY, send_alert
 from .checker import CheckResult, check_url
 from .config import config
-from .db import _connect, list_sites, purge_old_checks, save_check
+from .db import _connect, get_latest_incident, list_sites, purge_old_checks, save_check
 from .incidents import process_check
 
 logger = logging.getLogger(__name__)
@@ -158,6 +161,40 @@ def _record_timeout(site: dict[str, object], budget_seconds: float, reason: str,
     record(site, result)
 
 
+def _send_incident_alert(
+    conn: Any,
+    site: dict[str, object],
+    kind: str,
+    get_incident_func: Callable[..., dict[str, object] | None],
+    send_alert_func: Callable[..., bool],
+) -> None:
+    """Send the DOWN or RECOVERY alert of an incident.
+
+    The incident is read from the database: it holds the start, the end and
+    the failure type that the message needs. A failure of the alert - a
+    broken channel, a bad token, a database error - is logged and never
+    stops the run for the other sites (spec section 10).
+    """
+    site_id = site.get("id")
+    try:
+        incident = get_incident_func(site_id, conn=conn)
+        if incident is None:
+            logger.error(
+                "The %s alert of site %s was skipped: no incident was found",
+                kind,
+                site_id,
+            )
+            return
+        send_alert_func(conn, site, incident, kind)
+    except Exception as exc:  # noqa: BLE001 - a failed alert must not stop the run
+        logger.error(
+            "The %s alert of site %s could not be sent (%s)",
+            kind,
+            site_id,
+            type(exc).__name__,
+        )
+
+
 def _run_sites(
     sites: list[dict[str, object]],
     check_fn: Callable[..., CheckResult],
@@ -219,6 +256,8 @@ def run_all_checks(
     save_check_func: Callable[..., int] | None = None,
     purge_func: Callable[..., int] | None = None,
     process_check_func: Callable[..., str | None] | None = None,
+    send_alert_func: Callable[..., bool] | None = None,
+    get_incident_func: Callable[..., dict[str, object] | None] | None = None,
     connect_func: Callable[[], Any] | None = None,
     max_workers: int | None = None,
     site_timeout_seconds: float | None = None,
@@ -235,7 +274,9 @@ def run_all_checks(
 
     Every stored check is handed to the incident state machine, which opens
     and closes the incidents. A failure of the state machine never stops the
-    run.
+    run. An incident that was opened or closed gets its alert - a DOWN
+    alert when it opens, a RECOVERY alert when it closes. A failing alert
+    never stops the run either.
     """
     start = time.perf_counter()
 
@@ -245,6 +286,8 @@ def run_all_checks(
     save_fn = save_check_func or save_check
     purge_fn = purge_func or purge_old_checks
     process_check_fn = process_check_func or process_check
+    send_alert_fn = send_alert_func or send_alert
+    get_incident_fn = get_incident_func or get_latest_incident
     connect_fn = connect_func or _connect
 
     # Use overrides if passed, or fall back to config values
@@ -293,12 +336,25 @@ def run_all_checks(
         # The check is stored, so the incident state machine can look at it.
         # A failure of one site must never stop the run for the other sites.
         try:
-            process_check_fn(connection.conn, site, result)
+            outcome = process_check_fn(connection.conn, site, result)
         except Exception as exc:  # noqa: BLE001 - a failed incident must not stop the run
             logger.error(
                 "The incident state of site %s could not be updated (%s)",
                 site_id,
                 type(exc).__name__,
+            )
+            return
+
+        # An incident that was opened or closed gets its alert: a DOWN alert
+        # when the incident opens, a RECOVERY alert when it closes (spec
+        # section 8.4). A failing alert never stops the run.
+        if outcome == "opened":
+            _send_incident_alert(
+                connection.conn, site, KIND_DOWN, get_incident_fn, send_alert_fn
+            )
+        elif outcome == "closed":
+            _send_incident_alert(
+                connection.conn, site, KIND_RECOVERY, get_incident_fn, send_alert_fn
             )
 
     try:

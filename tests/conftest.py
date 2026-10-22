@@ -142,15 +142,16 @@ def no_real_network(monkeypatch):
 def dotenv_calls(monkeypatch):
     """Replace the .env loader with a recorder, so no real .env is read.
 
-    ``app.db`` calls ``load_dotenv()`` on its command line entry point only.
-    During a test run the call is intercepted here and recorded instead, which
-    keeps the suite hermetic - a real .env file in the working directory is
-    never opened and no real secret ever reaches the process environment.
+    ``app.db`` and ``app.alerts`` call ``load_dotenv()`` on their command line
+    entry points only. During a test run the call is intercepted here and
+    recorded instead, which keeps the suite hermetic - a real .env file in the
+    working directory is never opened and no real secret ever reaches the
+    process environment.
 
     A test that wants to assert on the loading behaviour asks for this
     fixture by name and inspects the returned list of calls.
     """
-    from app import db
+    from app import alerts, db
 
     calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
 
@@ -159,5 +160,6 @@ def dotenv_calls(monkeypatch):
         return True
 
     monkeypatch.setattr(db, "load_dotenv", recording_load_dotenv)
+    monkeypatch.setattr(alerts, "load_dotenv", recording_load_dotenv)
 
     return calls

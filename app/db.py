@@ -492,6 +492,81 @@ def recent_results(site_id: int, limit: int = 20, conn: Any | None = None) -> li
 
 
 @_db_errors
+def get_latest_incident(site_id: int, conn: Any | None = None) -> dict[str, Any] | None:
+    """Return the newest incident of a site, or None.
+
+    The alert of an incident needs the incident itself: its id, its start,
+    its end and its failure type. The newest incident of a site is the one
+    that was just opened or just closed - a site never has two open
+    incidents at the same time (spec section 8.4).
+    """
+    query = (
+        "SELECT id, site_id, started_at, ended_at, failure_type, "
+        "consecutive_failures FROM incidents "
+        "WHERE site_id = %s ORDER BY started_at DESC, id DESC LIMIT 1"
+    )
+
+    with _connection(conn) as session, _cursor(session) as cur:
+        cur.execute(query, (site_id,))
+        row = cur.fetchone()
+
+    if not row:
+        return None
+    return dict(row)
+
+
+@_db_errors
+def log_alert(
+    site_id: int,
+    incident_id: int | None,
+    kind: str,
+    channel: str = "telegram",
+    success: bool = True,
+    conn: Any | None = None,
+) -> int:
+    """Record one alert attempt in the alert log and return its new id.
+
+    Every attempt is written down, successful or not, so the log shows what
+    the project tried to tell the user (spec section 9). The log is also the
+    memory of what was already sent: a second alert of the same kind for
+    the same incident is never sent (spec section 8.4).
+
+    ``sent_at`` is set by the database to the current time.
+    """
+    query = """INSERT INTO alert_log
+               (incident_id, site_id, kind, sent_at, channel, success)
+               VALUES (%s, %s, %s, NOW(), %s, %s)
+               RETURNING id"""
+    params = (incident_id, site_id, kind, channel, success)
+
+    with _connection(conn) as session, _cursor(session) as cur:
+        cur.execute(query, params)
+        row = cur.fetchone()
+        session.commit()
+
+    if not row or row.get("id") is None:
+        raise DatabaseError("The alert attempt could not be stored")
+    return int(row["id"])
+
+
+@_db_errors
+def alert_exists(incident_id: int, kind: str, conn: Any | None = None) -> bool:
+    """Return True when an alert of this kind was already logged.
+
+    The check is made against the alert log and not against a variable of
+    the process, so a restart of the free Render instance never sends a
+    second alert for the same incident (spec section 8.4, test case T14).
+    """
+    query = "SELECT 1 FROM alert_log WHERE incident_id = %s AND kind = %s LIMIT 1"
+
+    with _connection(conn) as session, _cursor(session) as cur:
+        cur.execute(query, (incident_id, kind))
+        row = cur.fetchone()
+
+    return row is not None
+
+
+@_db_errors
 def purge_old_checks(days: int = 30, conn: Any | None = None) -> int:
     """Delete check rows older than ``days`` days and return how many went.
 
