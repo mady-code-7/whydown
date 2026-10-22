@@ -1,0 +1,11 @@
+{# The page that is shown when a site does not exist.
+
+   The message is fixed text: it never contains a traceback, an exception
+   message or anything from the database (spec section 12). #}
+{% extends "base.html" %}
+{% block title %}WhyDown - site not found{% endblock %}
+{% block content %}
+  <h1>Site not found</h1>
+  <p class="empty">There is no site with this id. It may have been removed.</p>
+  <p class="back"><a href="{{ url_for('dashboard') }}">&larr; All sites</a></p>
+{% endblock %}

@@ -133,6 +133,36 @@ def test_the_overview_page_shows_the_last_check_time_in_utc(client, summaries):
     assert "2026-10-21 12:00:00 UTC" in body
 
 
+def test_the_name_of_a_site_links_to_its_detail_page(client, summaries):
+    """The name of a site is a link to the detail page of the site."""
+    body = client.get("/").get_data(as_text=True)
+
+    assert 'href="/sites/1"' in body
+    assert 'href="/sites/2"' in body
+
+
+def test_the_link_of_a_site_holds_its_name(client, summaries):
+    """The link holds the name of the site, escaped as usual."""
+    body = client.get("/").get_data(as_text=True)
+
+    assert '<a href="/sites/1">Portal</a>' in body
+
+
+def test_the_name_of_a_site_with_markup_is_escaped_in_the_link(client, monkeypatch):
+    """A site name can never inject markup into the link of the overview."""
+    monkeypatch.setattr(
+        db,
+        "site_summaries",
+        lambda *a, **k: [summary(name='<script>alert(1)</script>')],
+    )
+
+    body = client.get("/").get_data(as_text=True)
+
+    assert "<script>alert(1)</script>" not in body
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in body
+    assert 'href="/sites/1"' in body
+
+
 def test_a_naive_check_time_is_read_as_utc(client, monkeypatch):
     """A check time without a time zone is read as UTC."""
     monkeypatch.setattr(

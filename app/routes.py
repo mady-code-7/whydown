@@ -297,6 +297,12 @@ BADGE_CLASSES = {
 NO_CHECKS_BADGE = "none"
 NO_CHECKS_LABEL = "no checks yet"
 
+# How many checks the site detail page reads from the database, how many of
+# them the table shows and how many of them the stage chart shows.
+SITE_DETAIL_CHECKS = 100
+SITE_DETAIL_TABLE_ROWS = 20
+CHART_STAGE_CHECKS = 30
+
 
 def _badge_class(result: Any) -> str:
     """Return the CSS class of the status badge for a result code."""
@@ -341,6 +347,7 @@ def _dashboard_sites(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         uptime_24h = _uptime(int(row.get("checks_24h") or 0), int(row.get("up_24h") or 0))
         uptime_7d = _uptime(int(row.get("checks_7d") or 0), int(row.get("up_7d") or 0))
         sites.append({
+            "id": row.get("id"),
             "name": row.get("name"),
             "url": row.get("url"),
             "result": result or "",
@@ -394,6 +401,159 @@ def _dashboard_overview() -> tuple[Any, int]:
         up_count=up_count,
         down_count=down_count,
         unknown_count=unknown_count,
+    ), 200
+
+
+def _row_id(row: dict[str, Any]) -> int | None:
+    """Return the id of a row, or None when it has no usable id."""
+    try:
+        return int(row.get("id"))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+def _number(value: Any) -> int | None:
+    """Return a timing as an integer, or None when there is no timing.
+
+    A stage that was never measured has no value at all: it stays None so
+    that it becomes a gap in a chart and is never drawn as a zero.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return round(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _chart_label(value: Any) -> str:
+    """Return the label of a check on the time axis of a chart."""
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return value.astimezone(UTC).strftime("%Y-%m-%d %H:%M")
+    return "" if value is None else str(value)
+
+
+def _date_text(value: Any) -> str:
+    """Return a date as YYYY-MM-DD, or an empty string when there is none."""
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return value.astimezone(UTC).strftime("%Y-%m-%d")
+    return "" if value is None else str(value)
+
+
+def _site_detail_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Turn the check rows into the values the table of the page shows.
+
+    Every value is a plain string or a number, so the template can print
+    it with the normal escaping and can never inject markup (spec
+    section 12).
+    """
+    rows = []
+    for check in checks:
+        result = check.get("result") or ""
+        status_code = check.get("status_code")
+        total_ms = check.get("total_ms")
+        rows.append({
+            "checked_at_text": _utc_text(check.get("checked_at")),
+            "result": result,
+            "badge_class": _badge_class(result),
+            "badge_label": result or NO_CHECKS_LABEL,
+            "failed_stage": check.get("failed_stage") or "",
+            "status_code_text": "-" if status_code is None else str(status_code),
+            "total_ms_text": "-" if total_ms is None else str(total_ms),
+            "error_detail": check.get("error_detail") or "",
+        })
+    return rows
+
+
+def _chart_data(site: dict[str, Any], checks: list[dict[str, Any]]) -> dict[str, Any]:
+    """Return the data of the two charts of the site detail page.
+
+    The checks are ordered oldest first, so a chart reads from left to
+    right in time. A timing that was never measured stays None: it leaves
+    a gap in a chart and is never drawn as a zero.
+    """
+    ordered = list(reversed(checks))
+    labels = [_chart_label(check.get("checked_at")) for check in ordered]
+    stages = {
+        key: [_number(check.get(key)) for check in ordered]
+        for key in ("dns_ms", "tcp_ms", "tls_ms", "ttfb_ms")
+    }
+    points = [
+        {
+            "checked_at": _chart_label(check.get("checked_at")),
+            "result": check.get("result") or "",
+            "error_detail": check.get("error_detail") or "",
+            "total_ms": _number(check.get("total_ms")),
+        }
+        for check in ordered
+    ]
+    return {
+        "site": {"name": site.get("name") or "", "url": site.get("url") or ""},
+        "labels": labels,
+        "total_ms": [_number(check.get("total_ms")) for check in ordered],
+        "stages": stages,
+        "checks": points,
+    }
+
+
+def _site_detail(site_id: int) -> tuple[Any, int]:
+    """Render the detail page of one site (spec section 8.5).
+
+    The page reads the site from the summaries and its checks from the
+    check history, with one connection for the whole request. A database
+    failure is answered with the same 503 page as the overview: no
+    traceback, no exception text and nothing from the connection string
+    (spec section 12). An unknown site is answered with a 404 page.
+    """
+    try:
+        with _request_connection() as conn:
+            rows = db.site_summaries(conn=conn)
+            site = next((row for row in rows if _row_id(row) == site_id), None)
+            if site is None:
+                return render_template("not_found.html"), 404
+            checks = db.get_recent_checks(
+                site_id, limit=SITE_DETAIL_CHECKS, conn=conn
+            )
+    except Exception as exc:  # noqa: BLE001 - any database failure is a 503
+        # Only the type of the error is logged: the message of a database
+        # error may contain the connection string (spec section 12).
+        logger.error("Reading site %s failed (%s)", site_id, type(exc).__name__)
+        return render_template("error.html"), 503
+
+    latest = checks[0] if checks else {}
+    result = site.get("latest_result")
+    uptime_24h = _uptime(
+        int(site.get("checks_24h") or 0), int(site.get("up_24h") or 0)
+    )
+    uptime_7d = _uptime(
+        int(site.get("checks_7d") or 0), int(site.get("up_7d") or 0)
+    )
+
+    view = {
+        "id": site.get("id"),
+        "name": site.get("name") or "",
+        "url": site.get("url") or "",
+        "result": result or "",
+        "badge_class": _badge_class(result),
+        "badge_label": result or NO_CHECKS_LABEL,
+        "uptime_24h_text": _uptime_text(uptime_24h),
+        "uptime_7d_text": _uptime_text(uptime_7d),
+        "last_checked_text": _utc_text(site.get("latest_checked_at")),
+        "cert_expires_text": _date_text(latest.get("cert_expires_at")),
+        "cert_expiring_soon": bool(latest.get("cert_expiring_soon")),
+        "resolved_ip": latest.get("resolved_ip") or "",
+    }
+
+    return render_template(
+        "site_detail.html",
+        site=view,
+        checks=_site_detail_checks(checks[:SITE_DETAIL_TABLE_ROWS]),
+        has_checks=bool(checks),
+        chart_data=_chart_data(view, checks),
     ), 200
 
 
@@ -469,6 +629,11 @@ def register_dashboard_routes(app: Flask) -> None:
     def dashboard():
         """The overview page: the state of every monitored site."""
         return _dashboard_overview()
+
+    @app.get("/sites/<int:site_id>")
+    def site_detail(site_id: int):
+        """The detail page of one site: its timings and its history."""
+        return _site_detail(site_id)
 
 
 def register_api_routes(app: Flask) -> None:

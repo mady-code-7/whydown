@@ -1,0 +1,102 @@
+{# The detail page of one site (spec section 8.5).
+
+   Every value comes from the database and is printed with the normal
+   Jinja2 escaping - the |safe filter is never used, so a site name or an
+   error message can never inject markup into the page.
+
+   The chart data is handed to the script of the page as JSON. The JSON
+   element holds no executable code: the values in it are escaped by the
+   tojson filter, so a </script> in a name can never end the element. #}
+{% extends "base.html" %}
+{% block title %}WhyDown - {{ site.name }}{% endblock %}
+{% block content %}
+  <p class="back"><a href="{{ url_for('dashboard') }}">&larr; All sites</a></p>
+
+  <h1>{{ site.name }}</h1>
+  {# The URL is plain text, so a stored "javascript:" URL can never be
+     executed. #}
+  <p class="site-url">{{ site.url }}</p>
+
+  <p class="site-status">
+    <span class="badge badge-{{ site.badge_class }}">{{ site.badge_label }}</span>
+    <span class="note">Last checked: {{ site.last_checked_text }}</span>
+  </p>
+
+  <section class="summary" aria-label="Uptime of the site">
+    <div class="tile">
+      <span class="tile-value">{{ site.uptime_24h_text }}</span>
+      <span class="tile-label">Uptime 24 h</span>
+    </div>
+    <div class="tile">
+      <span class="tile-value">{{ site.uptime_7d_text }}</span>
+      <span class="tile-label">Uptime 7 d</span>
+    </div>
+  </section>
+
+  <section class="facts" aria-label="Details of the site">
+    {% if site.cert_expires_text %}
+      <p class="note">
+        Certificate expires: {{ site.cert_expires_text }}
+        {% if site.cert_expiring_soon %}
+          <span class="badge badge-slow cert-warning">expiring soon</span>
+        {% endif %}
+      </p>
+    {% endif %}
+    {% if site.resolved_ip %}
+      <p class="note">Resolved IP: {{ site.resolved_ip }}</p>
+    {% endif %}
+  </section>
+
+  {% if has_checks %}
+    <h2>Checks</h2>
+    <table class="sites checks">
+      <thead>
+        <tr>
+          <th scope="col">Checked (UTC)</th>
+          <th scope="col">Result</th>
+          <th scope="col">Failed stage</th>
+          <th scope="col">Status</th>
+          <th scope="col">Total</th>
+          <th scope="col">Detail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for check in checks %}
+          <tr>
+            <td data-label="Checked (UTC)">{{ check.checked_at_text }}</td>
+            <td data-label="Result"><span class="badge badge-{{ check.badge_class }}">{{ check.badge_label }}</span></td>
+            <td data-label="Failed stage">{{ check.failed_stage or "-" }}</td>
+            <td data-label="Status">{{ check.status_code_text }}</td>
+            <td data-label="Total">{{ check.total_ms_text }}</td>
+            <td data-label="Detail">{{ check.error_detail }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h2>Charts</h2>
+    <section class="chart-card" aria-label="Total response time per check">
+      <h3>Total response time</h3>
+      <div class="chart-box">
+        <canvas id="chart-total" class="chart-canvas" role="img" aria-label="Total response time per check"></canvas>
+        <p class="chart-note" id="chart-total-note" hidden>The chart is not available.</p>
+      </div>
+    </section>
+
+    <section class="chart-card" aria-label="Time per stage">
+      <h3>Time per stage (latest checks)</h3>
+      <div class="chart-box">
+        <canvas id="chart-stages" class="chart-canvas" role="img" aria-label="Time per stage of the latest checks"></canvas>
+        <p class="chart-note" id="chart-stages-note" hidden>The chart is not available.</p>
+      </div>
+    </section>
+
+    {# The chart data comes first, so it is in the page when the scripts
+       run. The CDN version is pinned, never @latest. #}
+    <script type="application/json" id="chart-data">{{ chart_data | tojson }}</script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.js" integrity="sha384-zYPBGXwO4633CABX/5Spf6emCKUJCfoOkhOMYyxMsatqQZPnDblmmOewfjsIVWCM" crossorigin="anonymous"></script>
+    <script src="{{ url_for('static', filename='charts.js') }}" defer></script>
+  {% else %}
+    <p class="empty">No checks yet</p>
+  {% endif %}
+{% endblock %}

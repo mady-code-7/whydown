@@ -23,6 +23,21 @@
   --none-fg: #4a5560;
 
   --radius: 6px;
+
+  /* The colour of every link. It is set once here and again in the dark
+     mode, so the "All sites" link and any other link are readable in both
+     modes and never use the default browser blue. */
+  --link: #0969da;
+  --link-hover: #0a58ca;
+
+  /* The colours of the charts. The chart script reads them from here, so
+     a chart is readable in the light and in the dark mode. */
+  --chart-total: #0969da;
+  --chart-total-fill: rgba(9, 105, 218, 0.12);
+  --chart-dns: #0969da;
+  --chart-tcp: #1a7f37;
+  --chart-tls: #bc4c00;
+  --chart-ttfb: #8250df;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -42,6 +57,15 @@
     --down-fg: #ff7b72;
     --none-bg: #21262d;
     --none-fg: #8b949e;
+
+    --chart-total: #58a6ff;
+    --chart-total-fill: rgba(88, 166, 255, 0.18);
+    --chart-dns: #58a6ff;
+    --chart-tcp: #3fb950;
+    --chart-tls: #e3b341;
+    --chart-ttfb: #bc8cff;
+    --link: #4493f8;
+    --link-hover: #58a6ff;
   }
 }
 
@@ -230,6 +254,116 @@ h1 {
 .badge-none {
   background: var(--none-bg);
   color: var(--none-fg);
+}
+
+/* The site detail page */
+
+.back {
+  font-size: 0.9rem;
+  margin: 0 0 0.75rem;
+}
+
+.site-url {
+  color: var(--muted);
+  margin: 0 0 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.site-status {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.site-status .note {
+  margin: 0;
+}
+
+.facts {
+  margin-bottom: 1rem;
+}
+
+.cert-warning {
+  margin-left: 0.25rem;
+}
+
+h2 {
+  font-size: 1.1rem;
+  margin: 1.5rem 0 0.75rem;
+}
+
+h3 {
+  font-size: 0.95rem;
+  margin: 0 0 0.5rem;
+}
+
+.chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 1rem;
+  padding: 1rem;
+}
+
+/* The box that wraps a single canvas. Its height is fixed, so the canvas
+   fills it with no vertical growth: that is what stops Chart.js from looping
+   its responsive resize (the symptom was a chart that grew forever until the
+   page went blank). The canvas itself has no width or height attribute - the
+   box sets the size, responsive:true and maintainAspectRatio:false in the
+   chart options make the drawing fill the box, and Chart.js resizes the same
+   canvas only once. */
+.chart-box {
+  position: relative;
+  height: 18rem;
+  width: 100%;
+  overflow: hidden;
+}
+
+.chart-canvas {
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
+/* The rule above beats the [hidden] rule of the browser, so the hidden
+   canvas is hidden again here: the note takes its place. */
+.chart-canvas[hidden] {
+  display: none;
+}
+
+@media (max-width: 40rem) {
+  .chart-box {
+    height: 15rem;
+  }
+}
+
+/* Links are readable in both light and dark mode (spec section 8.5). */
+a {
+  color: var(--link);
+}
+
+a:hover,
+a:focus {
+  color: var(--link-hover);
+  text-decoration: underline;
+}
+
+.chart-note {
+  color: var(--muted);
+  margin: 0;
+  text-align: center;
+  /* Centred over the box when the canvas is hidden, so a failed chart still
+     fills its box instead of leaving an 18rem gap. */
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chart-note[hidden] {
+  display: none;
 }
 
 /* A narrow screen: the table turns into one card per site, so a phone
