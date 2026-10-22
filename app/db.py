@@ -567,6 +567,79 @@ def alert_exists(incident_id: int, kind: str, conn: Any | None = None) -> bool:
 
 
 @_db_errors
+def log_cert_alert(
+    site_id: int,
+    cert_expires_at: Any,
+    threshold_days: int,
+    kind: str = "CERT_WARNING",
+    channel: str = "telegram",
+    success: bool = True,
+    conn: Any | None = None,
+) -> int:
+    """Record one certificate-expiry warning in the alert log.
+
+    The row holds the expiry date of the certificate and the threshold that
+    was crossed. Together with the site they are the memory of what was
+    already warned about, so a threshold fires once per certificate (spec
+    section 8.4, test case T09). A certificate that was renewed has a
+    different expiry date and therefore starts the cycle again.
+
+    Every attempt is written down, successful or not, so the log shows what
+    the project tried to tell the user (spec section 9).
+    """
+    query = """INSERT INTO alert_log
+               (incident_id, site_id, kind, sent_at, channel, success,
+                cert_expires_at, cert_threshold_days)
+               VALUES (NULL, %s, %s, NOW(), %s, %s, %s, %s)
+               RETURNING id"""
+    params = (
+        site_id,
+        kind,
+        channel,
+        success,
+        cert_expires_at,
+        int(threshold_days),
+    )
+
+    with _connection(conn) as session, _cursor(session) as cur:
+        cur.execute(query, params)
+        row = cur.fetchone()
+        session.commit()
+
+    if not row or row.get("id") is None:
+        raise DatabaseError("The certificate warning could not be stored")
+    return int(row["id"])
+
+
+@_db_errors
+def cert_alert_exists(
+    site_id: int,
+    cert_expires_at: Any,
+    threshold_days: int,
+    kind: str = "CERT_WARNING",
+    conn: Any | None = None,
+) -> bool:
+    """Return True when this certificate and this threshold were warned about.
+
+    The check is made against the alert log and not against a variable of
+    the process, so a restart of the free Render instance never sends a
+    second warning for the same threshold of the same certificate (spec
+    section 8.4, test case T09).
+    """
+    query = (
+        "SELECT 1 FROM alert_log WHERE site_id = %s AND kind = %s "
+        "AND cert_expires_at = %s AND cert_threshold_days = %s LIMIT 1"
+    )
+    params = (site_id, kind, cert_expires_at, int(threshold_days))
+
+    with _connection(conn) as session, _cursor(session) as cur:
+        cur.execute(query, params)
+        row = cur.fetchone()
+
+    return row is not None
+
+
+@_db_errors
 def purge_old_checks(days: int = 30, conn: Any | None = None) -> int:
     """Delete check rows older than ``days`` days and return how many went.
 

@@ -6,6 +6,8 @@ connection from ``fake_db.py``.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from fake_db import FakeConnection, fake_connect_factory
 
@@ -99,6 +101,100 @@ def test_alert_exists_asks_for_the_incident_and_the_kind(connection):
     assert "FROM alert_log" in statement.sql
     assert statement.params == (7, "DOWN")
     assert "7" not in statement.sql
+
+
+# --------------------------------------------------------------------------
+# log_cert_alert
+# --------------------------------------------------------------------------
+
+def test_log_cert_alert_stores_the_attempt(connection):
+    """A certificate warning is stored with its site, its kind and its channel."""
+    connection.responses = [{"rows": [{"id": 11}], "rowcount": 1}]
+    expires = datetime(2026, 11, 4, 12, 0, 0, tzinfo=UTC)
+
+    alert_id = db.log_cert_alert(
+        site_id=3, cert_expires_at=expires, threshold_days=7, kind="CERT_WARNING"
+    )
+
+    assert alert_id == 11
+    statement = connection.statements[0]
+    assert "INSERT INTO alert_log" in statement.sql
+    assert statement.params == (3, "CERT_WARNING", "telegram", True, expires, 7)
+    assert connection.commits == 1
+
+
+def test_log_cert_alert_stores_a_failed_attempt(connection):
+    """A failed warning is stored as well."""
+    connection.responses = [{"rows": [{"id": 11}], "rowcount": 1}]
+
+    db.log_cert_alert(
+        site_id=3,
+        cert_expires_at=datetime(2026, 11, 4, tzinfo=UTC),
+        threshold_days=3,
+        success=False,
+    )
+
+    assert connection.statements[0].params[3] is False
+
+
+def test_log_cert_alert_uses_parameterised_values(connection):
+    """The values are passed as parameters, never formatted into the SQL."""
+    connection.responses = [{"rows": [{"id": 11}], "rowcount": 1}]
+
+    db.log_cert_alert(site_id=3, cert_expires_at=None, threshold_days=14)
+
+    statement = connection.statements[0]
+    assert "14" not in statement.sql
+    assert "3" not in statement.sql
+
+
+def test_log_cert_alert_without_a_returned_row_raises_database_error(connection):
+    """A missing RETURNING value is an error, not a silent None."""
+    connection.responses = [{"rows": [], "rowcount": 0}]
+
+    with pytest.raises(db.DatabaseError):
+        db.log_cert_alert(site_id=3, cert_expires_at=None, threshold_days=7)
+
+
+# --------------------------------------------------------------------------
+# cert_alert_exists
+# --------------------------------------------------------------------------
+
+def test_cert_alert_exists_finds_a_logged_warning(connection):
+    """A warning that is in the log is found."""
+    connection.responses = [[{"id": 1}]]
+    expires = datetime(2026, 11, 4, 12, 0, 0, tzinfo=UTC)
+
+    assert db.cert_alert_exists(3, expires, 7) is True
+
+
+def test_cert_alert_exists_is_false_without_a_warning(connection):
+    """A certificate that was not warned about is not found."""
+    connection.responses = [[]]
+
+    assert db.cert_alert_exists(3, datetime(2026, 11, 4, tzinfo=UTC), 7) is False
+
+
+def test_cert_alert_exists_asks_for_the_site_the_certificate_and_the_tier(connection):
+    """The site, the expiry date and the threshold are the memory of a warning."""
+    expires = datetime(2026, 11, 4, 12, 0, 0, tzinfo=UTC)
+
+    db.cert_alert_exists(3, expires, 7)
+
+    statement = connection.statements[0]
+    assert "FROM alert_log" in statement.sql
+    assert "cert_expires_at" in statement.sql
+    assert "cert_threshold_days" in statement.sql
+    assert statement.params == (3, "CERT_WARNING", expires, 7)
+    assert "7" not in statement.sql
+
+
+def test_cert_alert_exists_uses_a_given_connection(connection):
+    """A caller may hand in its own connection."""
+    db.cert_alert_exists(3, None, 7, conn=connection)
+
+    assert connection.connect_calls == []
+    assert connection.closed is False
 
 
 # --------------------------------------------------------------------------

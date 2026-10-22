@@ -17,6 +17,8 @@ Implements the Phase 3B-1 check runner (spec section 10):
 * A total run deadline keeps the run inside the scheduler's request window.
 * When the incident state machine opens or closes an incident, the matching
   alert is sent (spec section 8.4). A failing alert never stops the run.
+* A certificate that expires soon gets its warning (spec section 8.3.1). The
+  warning is sent once per tier; a failing warning never stops the run.
 * One failing site (or a failed save) must never stop the run.
 """
 
@@ -28,7 +30,7 @@ from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from typing import Any
 
-from .alerts import KIND_DOWN, KIND_RECOVERY, send_alert
+from .alerts import KIND_DOWN, KIND_RECOVERY, send_alert, send_cert_alert
 from .checker import CheckResult, check_url
 from .config import config
 from .db import _connect, get_latest_incident, list_sites, purge_old_checks, save_check
@@ -112,7 +114,10 @@ def _check_site(site: dict[str, object], check_fn: Callable[..., CheckResult]) -
         return check_fn(
             site["url"],
             slow_threshold_ms=int(site["slow_threshold_ms"]),
-            cert_expiry_warning_days=config.thresholds.cert_expiry_warning_days,
+            # The warning window is at least as wide as the widest warning
+            # tier (14 days by default), so the ``cert_expiring_soon`` flag
+            # is set in time for every tier (spec section 8.3.1).
+            cert_expiry_warning_days=config.thresholds.cert_warning_days,
             expected_status=int(site["expected_status"]),
             expected_keyword=site["keyword"],
         )
@@ -159,6 +164,38 @@ def _record_timeout(site: dict[str, object], budget_seconds: float, reason: str,
     result.error_message = f"{reason}: check did not complete within {budget_seconds}s"
     result.total_ms = budget_seconds * 1000
     record(site, result)
+
+
+def _send_certificate_alert(
+    conn: Any,
+    site: dict[str, object],
+    result: CheckResult,
+    send_cert_alert_func: Callable[..., bool],
+) -> None:
+    """Send the certificate-expiry warning of a check, if it is needed.
+
+    The warning is only sent for a check whose certificate expires soon
+    (spec section 8.3.1). A failure of the alert - a broken channel, a bad
+    token, a database error - is logged and never stops the run for the
+    other sites (spec section 10).
+    """
+    site_id = site.get("id")
+    if not getattr(result, "cert_expiring_soon", False):
+        return
+
+    try:
+        send_cert_alert_func(
+            conn,
+            site,
+            result,
+            config.thresholds.cert_alert_thresholds,
+        )
+    except Exception as exc:  # noqa: BLE001 - a failed alert must not stop the run
+        logger.error(
+            "The certificate warning of site %s could not be sent (%s)",
+            site_id,
+            type(exc).__name__,
+        )
 
 
 def _send_incident_alert(
@@ -257,6 +294,7 @@ def run_all_checks(
     purge_func: Callable[..., int] | None = None,
     process_check_func: Callable[..., str | None] | None = None,
     send_alert_func: Callable[..., bool] | None = None,
+    send_cert_alert_func: Callable[..., bool] | None = None,
     get_incident_func: Callable[..., dict[str, object] | None] | None = None,
     connect_func: Callable[[], Any] | None = None,
     max_workers: int | None = None,
@@ -287,6 +325,7 @@ def run_all_checks(
     purge_fn = purge_func or purge_old_checks
     process_check_fn = process_check_func or process_check
     send_alert_fn = send_alert_func or send_alert
+    send_cert_alert_fn = send_cert_alert_func or send_cert_alert
     get_incident_fn = get_incident_func or get_latest_incident
     connect_fn = connect_func or _connect
 
@@ -335,6 +374,7 @@ def run_all_checks(
 
         # The check is stored, so the incident state machine can look at it.
         # A failure of one site must never stop the run for the other sites.
+        outcome: str | None = None
         try:
             outcome = process_check_fn(connection.conn, site, result)
         except Exception as exc:  # noqa: BLE001 - a failed incident must not stop the run
@@ -343,7 +383,6 @@ def run_all_checks(
                 site_id,
                 type(exc).__name__,
             )
-            return
 
         # An incident that was opened or closed gets its alert: a DOWN alert
         # when the incident opens, a RECOVERY alert when it closes (spec
@@ -356,6 +395,13 @@ def run_all_checks(
             _send_incident_alert(
                 connection.conn, site, KIND_RECOVERY, get_incident_fn, send_alert_fn
             )
+
+        # A certificate that expires soon gets a warning (spec section 8.3.1).
+        # The warning is sent once per threshold; the alert log remembers what
+        # was already sent. A failing warning never stops the run.
+        _send_certificate_alert(
+            connection.conn, site, result, send_cert_alert_fn
+        )
 
     try:
         sites = list_sites_fn(conn=connection.conn, enabled_only=True)

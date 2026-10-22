@@ -43,6 +43,44 @@ class AlertConfig:
 # "not set": a weak secret must never open the /run-checks endpoint.
 CRON_SECRET_MIN_LENGTH = 16
 
+# The default certificate-expiry warning tiers, in days. Every tier sends one
+# warning when the remaining days drop to or below it (spec section 8.3.1).
+# The tiers are kept in ascending order, so the most urgent one - the
+# smallest number of days - is the first one.
+DEFAULT_CERT_ALERT_DAYS = "14,7,3"
+
+# The default tiers in ascending order: the most urgent tier comes first.
+DEFAULT_CERT_ALERT_TIERS = (3, 7, 14)
+
+
+def parse_cert_alert_days(raw: str | None) -> tuple[int, ...]:
+    """Parse the certificate-expiry warning tiers from a string.
+
+    The value is a comma separated list of day counts, for example
+    ``"14,7,3"``. The tiers are returned in ascending order, without
+    duplicates and without values that are not positive numbers. An empty or
+    unusable value falls back to the default tiers, so the warnings keep
+    working even with a broken environment variable.
+    """
+    if not raw:
+        return DEFAULT_CERT_ALERT_TIERS
+
+    days: set[int] = set()
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            value = int(part)
+        except ValueError:
+            continue
+        if value > 0:
+            days.add(value)
+
+    if not days:
+        return DEFAULT_CERT_ALERT_TIERS
+    return tuple(sorted(days))
+
 
 def load_cron_secret() -> str:
     """Read CRON_SECRET from the environment.
@@ -80,10 +118,38 @@ class NetworkTimeouts:
 
 @dataclass(frozen=True)
 class SiteThresholds:
-    """Site threshold configuration."""
+    """Site threshold configuration.
+
+    Three kinds of threshold are configured:
+
+    * ``slow_threshold``          - milliseconds (spec section 8.3).
+    * ``cert_expiry_warning_days`` - how many days remain before a certificate
+      is flagged as expiring soon. Used by the checker's
+      ``cert_expiring_soon`` flag (spec section 8.3.1).
+    * ``cert_alert_thresholds``   - the certificate-expiry warning tiers. For
+      every tier that the remaining days drop to or below, one warning is
+      sent (spec section 8.3.1 and 8.4). A tier fires once per certificate,
+      so a certificate that was renewed early (a different expiry date)
+      starts the cycle again (test case T09). The default tiers are 14, 7
+      and 3 days.
+    """
     slow_threshold: int = 5000
     cert_expiry_warning_days: int = 7
     incident_threshold: int = 3
+    # The warning tiers, kept ascending so that the lowest tier is found
+    # first when several are crossed at the same time.
+    cert_alert_thresholds: tuple[int, ...] = DEFAULT_CERT_ALERT_TIERS
+
+    @property
+    def cert_warning_days(self) -> int:
+        """The window in which a certificate counts as expiring soon.
+
+        The window is at least as wide as the widest warning tier, otherwise
+        a tier could never be reached: the checker's ``cert_expiring_soon``
+        flag has to be set before a warning can be sent (spec section 8.3.1).
+        """
+        widest = max(self.cert_alert_thresholds, default=0)
+        return max(self.cert_expiry_warning_days, widest)
 
 
 @dataclass(frozen=True)
@@ -221,6 +287,9 @@ def load_config() -> Config:
         slow_threshold=int(os.getenv("SLOW_THRESHOLD_MS", "5000")),
         cert_expiry_warning_days=int(os.getenv("CERT_EXPIRY_WARNING_DAYS", "7")),
         incident_threshold=int(os.getenv("INCIDENT_THRESHOLD", "3")),
+        cert_alert_thresholds=parse_cert_alert_days(
+            os.getenv("CERT_ALERT_DAYS", DEFAULT_CERT_ALERT_DAYS)
+        ),
     )
 
     # Parse runner config

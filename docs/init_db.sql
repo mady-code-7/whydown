@@ -69,8 +69,20 @@ CREATE TABLE IF NOT EXISTS alert_log (
     kind TEXT NOT NULL,
     sent_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     channel TEXT NOT NULL,
-    success BOOLEAN DEFAULT TRUE
+    success BOOLEAN DEFAULT TRUE,
+    -- Certificate-expiry warning (spec section 8.3.1): the expiry date of the
+    -- certificate and the threshold that was crossed. The two together with
+    -- the site are the memory of what was already warned about, so a
+    -- threshold fires once per certificate (spec section 8.4).
+    cert_expires_at TIMESTAMP WITH TIME ZONE,
+    cert_threshold_days INTEGER
 );
 
 -- Index for recent alerts
 CREATE INDEX IF NOT EXISTS idx_alert_log_site_sent ON alert_log (site_id, sent_at DESC);
+
+-- Add the certificate columns to an alert_log table that was created before
+-- them. Both statements are idempotent, so the script can be run again on an
+-- existing database (spec section 17, step 4).
+ALTER TABLE alert_log ADD COLUMN IF NOT EXISTS cert_expires_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE alert_log ADD COLUMN IF NOT EXISTS cert_threshold_days INTEGER;

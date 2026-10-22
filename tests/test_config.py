@@ -1,6 +1,6 @@
 """Tests for environment-based configuration."""
 
-from app.config import load_config
+from app.config import load_config, parse_cert_alert_days
 
 
 def test_config_loads_from_env_vars(monkeypatch):
@@ -64,3 +64,59 @@ def test_incident_threshold_is_read_from_the_environment(monkeypatch):
     cfg = load_config()
 
     assert cfg.thresholds.incident_threshold == 5
+
+
+def test_cert_alert_days_default_to_14_7_and_3(monkeypatch):
+    """Without a configuration the warning uses three tiers (spec section 8.3.1)."""
+    monkeypatch.delenv("CERT_ALERT_DAYS", raising=False)
+
+    cfg = load_config()
+
+    assert cfg.thresholds.cert_alert_thresholds == (3, 7, 14)
+
+
+def test_cert_alert_days_are_read_from_the_environment(monkeypatch):
+    """The tiers can be changed without touching the code."""
+    monkeypatch.setenv("CERT_ALERT_DAYS", "30,10")
+
+    cfg = load_config()
+
+    assert cfg.thresholds.cert_alert_thresholds == (10, 30)
+
+
+def test_a_broken_cert_alert_days_falls_back_to_the_default(monkeypatch):
+    """An unusable value does not switch the warnings off."""
+    monkeypatch.setenv("CERT_ALERT_DAYS", "not a number")
+
+    cfg = load_config()
+
+    assert cfg.thresholds.cert_alert_thresholds == (3, 7, 14)
+
+
+def test_the_warning_window_covers_the_widest_tier(monkeypatch):
+    """The flag of the checker must be set before a tier can fire."""
+    monkeypatch.setenv("CERT_EXPIRY_WARNING_DAYS", "7")
+    monkeypatch.setenv("CERT_ALERT_DAYS", "14,7,3")
+
+    cfg = load_config()
+
+    assert cfg.thresholds.cert_warning_days == 14
+
+
+def test_a_wider_warning_window_is_kept(monkeypatch):
+    """A window that is wider than the tiers is not narrowed down."""
+    monkeypatch.setenv("CERT_EXPIRY_WARNING_DAYS", "30")
+    monkeypatch.setenv("CERT_ALERT_DAYS", "14,7,3")
+
+    cfg = load_config()
+
+    assert cfg.thresholds.cert_warning_days == 30
+
+
+def test_parse_cert_alert_days_sorts_and_filters():
+    """The parser ignores empty, zero and unusable values."""
+    assert parse_cert_alert_days(None) == (3, 7, 14)
+    assert parse_cert_alert_days("") == (3, 7, 14)
+    assert parse_cert_alert_days("14,7,3") == (3, 7, 14)
+    assert parse_cert_alert_days(" 14 , 7 , 0 , -3 ") == (7, 14)
+    assert parse_cert_alert_days("0,0") == (3, 7, 14)
