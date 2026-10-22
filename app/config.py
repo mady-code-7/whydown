@@ -83,7 +83,7 @@ class SiteThresholds:
     """Site threshold configuration."""
     slow_threshold: int = 5000
     cert_expiry_warning_days: int = 7
-    incident_threshold: int = 2
+    incident_threshold: int = 3
 
 
 @dataclass(frozen=True)
@@ -220,7 +220,7 @@ def load_config() -> Config:
     thresholds = SiteThresholds(
         slow_threshold=int(os.getenv("SLOW_THRESHOLD_MS", "5000")),
         cert_expiry_warning_days=int(os.getenv("CERT_EXPIRY_WARNING_DAYS", "7")),
-        incident_threshold=int(os.getenv("INCIDENT_THRESHOLD", "2")),
+        incident_threshold=int(os.getenv("INCIDENT_THRESHOLD", "3")),
     )
 
     # Parse runner config

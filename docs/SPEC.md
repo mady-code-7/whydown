@@ -158,7 +158,7 @@ For each enabled site, on each run:
 > `OK`/`SLOW` result; alerting uses the flag and fires once per threshold crossing.
 
 ### 8.4 Incidents and alerts
-- A site enters an **incident** after **N consecutive failures** (default 2) to avoid alerts on a single blip.
+- A site enters an **incident** after **N consecutive failures** (default 3) to avoid alerts on a single blip.
 - One **DOWN alert** is sent when the incident opens, including the failure code and the stage where it failed.
 - One **RECOVERY alert** is sent on the first successful check afterwards, including the duration of the outage.
 - No repeated alerts while the incident remains open (optionally a reminder after a long time).

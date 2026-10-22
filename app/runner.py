@@ -29,6 +29,7 @@ from typing import Any
 from .checker import CheckResult, check_url
 from .config import config
 from .db import _connect, list_sites, purge_old_checks, save_check
+from .incidents import process_check
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +141,7 @@ def _collect_result(future: Future[CheckResult], site: dict[str, object], record
         result.failed_stage = "unknown"
         result.error_message = f"Check raised: {exc}"
         result.total_ms = 0.0
-    record(site["id"], result)
+    record(site, result)
 
 
 def _record_timeout(site: dict[str, object], budget_seconds: float, reason: str, record) -> None:
@@ -154,13 +155,13 @@ def _record_timeout(site: dict[str, object], budget_seconds: float, reason: str,
     result.failed_stage = "tcp"
     result.error_message = f"{reason}: check did not complete within {budget_seconds}s"
     result.total_ms = budget_seconds * 1000
-    record(site["id"], result)
+    record(site, result)
 
 
 def _run_sites(
     sites: list[dict[str, object]],
     check_fn: Callable[..., CheckResult],
-    record: Callable[[int, CheckResult], None],
+    record: Callable[[dict[str, object], CheckResult], None],
     max_workers: int,
     site_timeout: float,
     run_deadline: float,
@@ -217,6 +218,7 @@ def run_all_checks(
     check_url_func: Callable[..., CheckResult] | None = None,
     save_check_func: Callable[..., int] | None = None,
     purge_func: Callable[..., int] | None = None,
+    process_check_func: Callable[..., str | None] | None = None,
     connect_func: Callable[[], Any] | None = None,
     max_workers: int | None = None,
     site_timeout_seconds: float | None = None,
@@ -230,6 +232,10 @@ def run_all_checks(
 
     A failed save is counted in the summary as ``save_errors`` and the
     connection is reopened once; the run continues with the remaining sites.
+
+    Every stored check is handed to the incident state machine, which opens
+    and closes the incidents. A failure of the state machine never stops the
+    run.
     """
     start = time.perf_counter()
 
@@ -238,6 +244,7 @@ def run_all_checks(
     check_fn = check_url_func or check_url
     save_fn = save_check_func or save_check
     purge_fn = purge_func or purge_old_checks
+    process_check_fn = process_check_func or process_check
     connect_fn = connect_func or _connect
 
     # Use overrides if passed, or fall back to config values
@@ -260,8 +267,13 @@ def run_all_checks(
     # /run-checks turns it into a generic 500.
     connection = _RunConnection(connect_fn)
 
-    def record(site_id: int, result: CheckResult) -> None:
-        """Save one result and count it (main thread only)."""
+    def record(site: dict[str, object], result: CheckResult) -> None:
+        """Save one result, count it and feed the incident state machine.
+
+        This runs in the main thread only, so the database connection is never
+        used by two threads at the same time.
+        """
+        site_id = site["id"]
         counts[result.result] = counts.get(result.result, 0) + 1
         checked[0] += 1
         try:
@@ -276,6 +288,18 @@ def run_all_checks(
             # One attempt to get a working connection back; the run continues
             # either way.
             connection.reopen()
+            return
+
+        # The check is stored, so the incident state machine can look at it.
+        # A failure of one site must never stop the run for the other sites.
+        try:
+            process_check_fn(connection.conn, site, result)
+        except Exception as exc:  # noqa: BLE001 - a failed incident must not stop the run
+            logger.error(
+                "The incident state of site %s could not be updated (%s)",
+                site_id,
+                type(exc).__name__,
+            )
 
     try:
         sites = list_sites_fn(conn=connection.conn, enabled_only=True)

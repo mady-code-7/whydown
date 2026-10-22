@@ -403,6 +403,95 @@ def list_incidents(limit: int = 50, conn: Any | None = None) -> list[dict[str, A
 
 
 @_db_errors
+def get_open_incident(site_id: int, conn: Any | None = None) -> dict[str, Any] | None:
+    """Return the incident that is still open for a site, or None.
+
+    An incident is open while its ``ended_at`` is NULL (spec section 9).
+    The newest one is returned when a site somehow has more than one open
+    incident.
+    """
+    query = (
+        "SELECT id, site_id, started_at, ended_at, failure_type, "
+        "consecutive_failures FROM incidents "
+        "WHERE site_id = %s AND ended_at IS NULL "
+        "ORDER BY started_at DESC, id DESC LIMIT 1"
+    )
+
+    with _connection(conn) as session, _cursor(session) as cur:
+        cur.execute(query, (site_id,))
+        row = cur.fetchone()
+
+    if not row:
+        return None
+    return dict(row)
+
+
+@_db_errors
+def open_incident(
+    site_id: int,
+    failure_type: str,
+    consecutive_failures: int = 1,
+    conn: Any | None = None,
+) -> int:
+    """Open an incident for a site and return its new primary key.
+
+    ``started_at`` is set by the database to the current time, so the
+    incident always begins exactly when it is opened (spec section 9).
+    """
+    query = """INSERT INTO incidents
+               (site_id, started_at, failure_type, consecutive_failures)
+               VALUES (%s, NOW(), %s, %s)
+               RETURNING id"""
+    params = (site_id, failure_type, consecutive_failures)
+
+    with _connection(conn) as session, _cursor(session) as cur:
+        cur.execute(query, params)
+        row = cur.fetchone()
+        session.commit()
+
+    if not row or row.get("id") is None:
+        raise DatabaseError("The incident could not be stored")
+    return int(row["id"])
+
+
+@_db_errors
+def close_incident(incident_id: int, conn: Any | None = None) -> bool:
+    """Close an incident by setting its ``ended_at`` and report success.
+
+    Only an incident that is still open is closed, so a repeated close never
+    changes the end time of an incident that has ended before.
+    """
+    query = "UPDATE incidents SET ended_at = NOW() WHERE id = %s AND ended_at IS NULL"
+
+    with _connection(conn) as session, _cursor(session) as cur:
+        cur.execute(query, (incident_id,))
+        closed = cur.rowcount
+        session.commit()
+
+    return bool(closed and closed > 0)
+
+
+@_db_errors
+def recent_results(site_id: int, limit: int = 20, conn: Any | None = None) -> list[str]:
+    """Return the result codes of the latest checks of a site, newest first.
+
+    The incident state machine uses this to count the consecutive failures
+    (spec section 8.4). Only the codes are read - no other metadata and
+    certainly no response body.
+    """
+    query = (
+        "SELECT result FROM checks WHERE site_id = %s "
+        "ORDER BY checked_at DESC, id DESC LIMIT %s"
+    )
+
+    with _connection(conn) as session, _cursor(session) as cur:
+        cur.execute(query, (site_id, limit))
+        rows = cur.fetchall()
+
+    return [str(row["result"]) for row in rows]
+
+
+@_db_errors
 def purge_old_checks(days: int = 30, conn: Any | None = None) -> int:
     """Delete check rows older than ``days`` days and return how many went.
 
