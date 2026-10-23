@@ -23,6 +23,15 @@ import socket
 
 import pytest
 
+# ``load_test.py`` is a runnable script (``python -m tests.load_test``), not a
+# pytest module: it starts a real mock server and runs the check runner, so it
+# must never be collected or executed by the test suite. It ends in ``_test.py``
+# which matches pytest's default ``python_files`` glob, so it is listed here
+# explicitly. The file itself is not named ``test_*`` and contains no test
+# functions, but without this entry pytest would still import it during
+# collection and fail on the module-level imports.
+collect_ignore = ["load_test.py"]
+
 # The certificate material and the local TLS server live in their own module;
 # the fixtures are re-exported here so that every test can simply ask for
 # "tls_server" or "trust_test_ca".
