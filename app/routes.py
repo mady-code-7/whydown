@@ -10,9 +10,18 @@ from datetime import UTC, datetime
 from functools import wraps
 from typing import Any
 
-from flask import Flask, current_app, jsonify, render_template, request
+from flask import (
+    Flask,
+    current_app,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 
-from . import db
+from . import auth, db
+from .checker import parse_url
 from .config import CRON_SECRET_MIN_LENGTH, config, load_cron_secret
 from .runner import run_all_checks
 
@@ -29,23 +38,24 @@ _ORIGINAL_RUN_ALL_CHECKS = run_all_checks
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 500
 
+# The fields of a site that the admin area can change (spec section 9).
+SITE_FIELDS = (
+    "name",
+    "url",
+    "expected_status",
+    "keyword",
+    "slow_threshold_ms",
+    "enabled",
+)
 
-def require_admin_password(func: Callable) -> Callable:
-    """Decorator to require admin password for routes."""
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        # Check for admin password in header or query param
-        provided_token = (
-            request.headers.get("X-Admin-Password")
-            or request.args.get("admin_password")
-            or request.form.get("admin_password")
-        )
+# The default values of a new site (spec section 9).
+DEFAULT_EXPECTED_STATUS = 200
+DEFAULT_SLOW_THRESHOLD_MS = 5000
 
-        if not provided_token or provided_token != config.app.admin_password:
-            return jsonify({"error": "Admin access required"}), 403
-
-        return func(*args, **kwargs)
-    return wrapper
+# The longest name, URL and keyword a site may have.
+MAX_NAME_LENGTH = 200
+MAX_URL_LENGTH = 2000
+MAX_KEYWORD_LENGTH = 200
 
 
 def configured_secret() -> str:
@@ -694,6 +704,166 @@ def _incidents_page() -> tuple[Any, int]:
     return render_template("incidents.html", incidents=incidents), 200
 
 
+# --------------------------------------------------------------------------
+# The values of a site (spec section 8.1)
+# --------------------------------------------------------------------------
+
+def _as_int(value: Any) -> int | None:
+    """Return a value as an integer, or None when it is not one."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if text.isdecimal():
+            return int(text)
+    return None
+
+
+def _as_bool(value: Any) -> bool | None:
+    """Return a value as a boolean, or None when it is not one."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return bool(value)
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in ("true", "1", "on", "yes"):
+            return True
+        if text in ("false", "0", "off", "no", ""):
+            return False
+    return None
+
+
+def _site_values(
+    data: dict[str, Any], current: dict[str, Any] | None = None
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Return the values of a site, or a message that says what is wrong.
+
+    ``current`` holds the values of the site that is changed: a field that
+    is not sent keeps its value. Without it a new site is created, and
+    then the name and the URL are required.
+    """
+    creating = current is None
+    values: dict[str, Any] = {}
+    if current:
+        values = {key: current[key] for key in SITE_FIELDS if key in current}
+
+    # The name
+    if "name" in data or creating:
+        name = data.get("name")
+        if not isinstance(name, str):
+            return None, "The name must be text."
+        name = name.strip()
+        if not name:
+            return None, "The name is required."
+        if len(name) > MAX_NAME_LENGTH:
+            return None, "The name is too long."
+        values["name"] = name
+
+    # The URL
+    if "url" in data or creating:
+        url = data.get("url")
+        if not isinstance(url, str):
+            return None, "The URL must be text."
+        url = url.strip()
+        if not url:
+            return None, "The URL is required."
+        if len(url) > MAX_URL_LENGTH:
+            return None, "The URL is too long."
+        valid, _scheme, _host, _port, _path, error, _hint = parse_url(url)
+        if not valid:
+            return None, f"The URL is not usable: {error}"
+        values["url"] = url
+
+    # The expected status code
+    if "expected_status" in data:
+        raw = data.get("expected_status")
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            values["expected_status"] = DEFAULT_EXPECTED_STATUS
+        else:
+            status = _as_int(raw)
+            if status is None:
+                return None, "The expected status must be a number."
+            if not 100 <= status <= 599:
+                return None, "The expected status must be a number between 100 and 599."
+            values["expected_status"] = status
+    elif creating:
+        values["expected_status"] = DEFAULT_EXPECTED_STATUS
+
+    # The keyword
+    if "keyword" in data:
+        keyword = data.get("keyword")
+        if keyword is None:
+            values["keyword"] = None
+        elif isinstance(keyword, str):
+            keyword = keyword.strip()
+            if len(keyword) > MAX_KEYWORD_LENGTH:
+                return None, "The keyword is too long."
+            values["keyword"] = keyword or None
+        else:
+            return None, "The keyword must be text."
+    elif creating:
+        values["keyword"] = None
+
+    # The slow threshold
+    if "slow_threshold_ms" in data:
+        raw = data.get("slow_threshold_ms")
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            values["slow_threshold_ms"] = DEFAULT_SLOW_THRESHOLD_MS
+        else:
+            threshold = _as_int(raw)
+            if threshold is None:
+                return None, "The slow threshold must be a number of milliseconds."
+            if threshold <= 0:
+                return None, "The slow threshold must be a positive number of milliseconds."
+            values["slow_threshold_ms"] = threshold
+    elif creating:
+        values["slow_threshold_ms"] = DEFAULT_SLOW_THRESHOLD_MS
+
+    # The enabled flag
+    if "enabled" in data:
+        enabled = _as_bool(data.get("enabled"))
+        if enabled is None:
+            return None, "The enabled flag must be true or false."
+        values["enabled"] = enabled
+    elif creating:
+        # An admin checkbox is not ticked when the box is unchecked, so the
+        # new site defaults to being monitored. When editing, an absent
+        # field keeps the current value: unchecking the box really disables
+        # the site instead of silently leaving it on.
+        values["enabled"] = current.get("enabled", True) if current else True
+
+    return values, None
+
+
+def _form_values(form: Any) -> dict[str, Any]:
+    """Return the values of a form of the admin area.
+
+    A checkbox that is not ticked is not sent at all, so the flag is read
+    from the presence of the field: an unchecked box keeps its default
+    value.
+    """
+    return dict(form)
+
+
+def _max_sites() -> int:
+    """Return the number of sites the application monitors at most."""
+    return int(config.rate_limit.max_sites)
+
+
+def _safe_next(value: Any) -> str:
+    """Return the page to go to after the login.
+
+    Only a path of this application is allowed, so the login can never be
+    used to send a visitor to another site.
+    """
+    if isinstance(value, str) and value.startswith("/") and not value.startswith("//"):
+        return value
+    return url_for("admin_sites")
+
+
 def call_runner() -> dict[str, object]:
     """Run the check engine and return its summary.
 
@@ -752,6 +922,8 @@ def register(app: Flask) -> None:
 
     register_dashboard_routes(app)
     register_api_routes(app)
+    register_api_write_routes(app)
+    register_admin_routes(app)
 
 
 # Placeholder functions to be implemented in later phases
@@ -816,8 +988,244 @@ def register_api_routes(app: Flask) -> None:
         return error
 
 
+def register_api_write_routes(app: Flask) -> None:
+    """Register the write routes of the JSON API (spec section 11).
+
+    Every route needs a logged in admin and a CSRF token that belongs to
+    the session. A request without a session is answered with a 401, a
+    request without a token with a 403.
+    """
+
+    @app.post("/api/sites")
+    @auth.admin_required
+    @auth.csrf_protect
+    def api_add_site():
+        """Add a site and answer with its new id."""
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return _api_error("The body must be a JSON object.", 400)
+
+        values, error = _site_values(data)
+        if error:
+            return _api_error(error, 400)
+
+        try:
+            with _api_connection() as conn:
+                if len(db.list_sites(conn=conn)) >= _max_sites():
+                    return _api_error("Too many sites are monitored.", 400)
+                site_id = db.add_site(conn=conn, **values)
+        except Exception as exc:  # noqa: BLE001 - any database failure is a 503
+            logger.error("Adding a site failed (%s)", type(exc).__name__)
+            return _api_error("The site could not be stored.", 503)
+
+        return jsonify({"id": site_id, **values}), 201
+
+    @app.put("/api/sites/<int:site_id>")
+    @auth.admin_required
+    @auth.csrf_protect
+    def api_update_site(site_id: int):
+        """Change the values of a site."""
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return _api_error("The body must be a JSON object.", 400)
+
+        try:
+            with _api_connection() as conn:
+                current = db.get_site(site_id, conn=conn)
+        except Exception as exc:  # noqa: BLE001 - any database failure is a 503
+            logger.error("Reading site %s failed (%s)", site_id, type(exc).__name__)
+            return _api_error("The site is not available.", 503)
+
+        if current is None:
+            return _api_error("Unknown site.", 404)
+
+        values, error = _site_values(data, current=current)
+        if error:
+            return _api_error(error, 400)
+
+        try:
+            with _api_connection() as conn:
+                updated = db.update_site(site_id, conn=conn, **values)
+        except Exception as exc:  # noqa: BLE001 - any database failure is a 503
+            logger.error("Updating site %s failed (%s)", site_id, type(exc).__name__)
+            return _api_error("The site could not be changed.", 503)
+
+        if not updated:
+            return _api_error("Unknown site.", 404)
+
+        return jsonify({"id": site_id, **values}), 200
+
+    @app.delete("/api/sites/<int:site_id>")
+    @auth.admin_required
+    @auth.csrf_protect
+    def api_delete_site(site_id: int):
+        """Remove a site and everything that belongs to it."""
+        try:
+            with _api_connection() as conn:
+                removed = db.delete_site(site_id, conn=conn)
+        except Exception as exc:  # noqa: BLE001 - any database failure is a 503
+            logger.error("Deleting site %s failed (%s)", site_id, type(exc).__name__)
+            return _api_error("The site could not be removed.", 503)
+
+        if not removed:
+            return _api_error("Unknown site.", 404)
+
+        return "", 204
+
+
 def register_admin_routes(app: Flask) -> None:
-    """Register admin routes (to be implemented in Phase 3)."""
+    """Register the admin area (spec section 8.5 and 12).
+
+    The admin area is the only part of the application that changes
+    something. Every write route needs a logged in admin and a CSRF token
+    that belongs to the session (spec section 12).
+    """
+
+    @app.get("/admin/login")
+    def admin_login():
+        """The login page of the admin area."""
+        if auth.is_admin():
+            return redirect(url_for("admin_sites"))
+        return render_template(
+            "admin_login.html", admin_available=auth.admin_configured()
+        ), 200
+
+    @app.post("/admin/login")
+    @auth.csrf_protect
+    def admin_login_submit():
+        """Check the password and open the session of the admin.
+
+        The password is compared with hmac.compare_digest. A failed login
+        is written to the log without the password, and a burst of failed
+        logins locks the address out for a while.
+        """
+        address = auth.client_address()
+
+        if auth.login_locked(address):
+            logger.warning(
+                "Admin login refused for %s: too many failed attempts", address
+            )
+            return render_template(
+                "admin_login.html",
+                admin_available=True,
+                error="Too many failed attempts. Please try again in a few minutes.",
+            ), 429
+
+        if not auth.admin_configured():
+            logger.warning("Admin login refused: no admin password is configured")
+            return render_template("admin_login.html", admin_available=False), 503
+
+        given = request.form.get(auth.PASSWORD_FIELD, "")
+        if not auth.password_matches(given):
+            auth.record_login_failure(address)
+            # The log holds the address and nothing else: the password must
+            # never end up in a log (spec section 12).
+            logger.warning("Admin login failed for %s", address)
+            return render_template(
+                "admin_login.html",
+                admin_available=True,
+                error="The password is not correct.",
+            ), 401
+
+        auth.clear_login_failures(address)
+        auth.start_admin_session()
+        return redirect(_safe_next(request.form.get("next")))
+
+    @app.post("/admin/logout")
+    @auth.admin_required
+    @auth.csrf_protect
+    def admin_logout():
+        """Close the session of the admin."""
+        auth.end_admin_session()
+        return redirect(url_for("admin_login"))
+
+    @app.get("/admin/sites")
+    @auth.admin_required
+    def admin_sites():
+        """The page that manages the monitored sites."""
+        try:
+            with _request_connection() as conn:
+                sites = db.list_sites(conn=conn)
+        except Exception as exc:  # noqa: BLE001 - any database failure is a 503
+            logger.error("Reading the sites failed (%s)", type(exc).__name__)
+            return render_template("error.html"), 503
+
+        return render_template("admin_sites.html", sites=sites), 200
+
+    @app.post("/admin/sites")
+    @auth.admin_required
+    @auth.csrf_protect
+    def admin_add_site():
+        """Add a site from the admin page."""
+        values, error = _site_values(_form_values(request.form))
+        if error:
+            return _admin_page_error(error), 400
+
+        try:
+            with _request_connection() as conn:
+                if len(db.list_sites(conn=conn)) >= _max_sites():
+                    return _admin_page_error("Too many sites are monitored."), 400
+                db.add_site(conn=conn, **values)
+        except Exception as exc:  # noqa: BLE001 - any database failure is a 503
+            logger.error("Adding a site failed (%s)", type(exc).__name__)
+            return render_template("error.html"), 503
+
+        return redirect(url_for("admin_sites"))
+
+    @app.post("/admin/sites/<int:site_id>/edit")
+    @auth.admin_required
+    @auth.csrf_protect
+    def admin_update_site(site_id: int):
+        """Change a site from the admin page."""
+        try:
+            with _request_connection() as conn:
+                current = db.get_site(site_id, conn=conn)
+        except Exception as exc:  # noqa: BLE001 - any database failure is a 503
+            logger.error("Reading site %s failed (%s)", site_id, type(exc).__name__)
+            return render_template("error.html"), 503
+
+        if current is None:
+            return render_template("not_found.html"), 404
+
+        values, error = _site_values(_form_values(request.form), current=current)
+        if error:
+            return _admin_page_error(error), 400
+
+        try:
+            with _request_connection() as conn:
+                db.update_site(site_id, conn=conn, **values)
+        except Exception as exc:  # noqa: BLE001 - any database failure is a 503
+            logger.error("Updating site %s failed (%s)", site_id, type(exc).__name__)
+            return render_template("error.html"), 503
+
+        return redirect(url_for("admin_sites"))
+
+    @app.post("/admin/sites/<int:site_id>/delete")
+    @auth.admin_required
+    @auth.csrf_protect
+    def admin_delete_site(site_id: int):
+        """Remove a site from the admin page."""
+        try:
+            with _request_connection() as conn:
+                removed = db.delete_site(site_id, conn=conn)
+        except Exception as exc:  # noqa: BLE001 - any database failure is a 503
+            logger.error("Deleting site %s failed (%s)", site_id, type(exc).__name__)
+            return render_template("error.html"), 503
+
+        if not removed:
+            return render_template("not_found.html"), 404
+
+        return redirect(url_for("admin_sites"))
+
+
+def _admin_page_error(message: str) -> Any:
+    """Render the admin page with a message that says what is wrong."""
+    try:
+        with _request_connection() as conn:
+            sites = db.list_sites(conn=conn)
+    except Exception:  # noqa: BLE001 - the message is more important here
+        sites = []
+    return render_template("admin_sites.html", sites=sites, error=message)
 
 
 def register_checker_routes(app: Flask) -> None:

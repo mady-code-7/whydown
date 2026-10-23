@@ -107,8 +107,9 @@ def connection(monkeypatch):
 
 
 @pytest.fixture
-def client(connection):
+def client(connection, monkeypatch):
     """A test client whose database layer is faked."""
+    monkeypatch.setenv("ADMIN_PASSWORD", "a-password-for-the-tests")
     application = create_app()
     application.config["TESTING"] = True
     return application.test_client()
@@ -359,7 +360,7 @@ def test_incidents_endpoint_rejects_a_bad_limit(client, db_calls):
 # Method, caching and connection handling
 # --------------------------------------------------------------------------
 
-@pytest.mark.parametrize("path", ["/api/sites", "/api/sites/1/checks", "/api/incidents"])
+@pytest.mark.parametrize("path", ["/api/sites/1/checks", "/api/incidents"])
 def test_api_endpoints_reject_post(client, db_calls, path):
     """The read-only endpoints answer 405 for a POST."""
     response = client.post(path)
@@ -368,7 +369,18 @@ def test_api_endpoints_reject_post(client, db_calls, path):
     assert "error" in response.get_json()
 
 
-@pytest.mark.parametrize("path", ["/api/sites", "/api/sites/1/checks", "/api/incidents"])
+def test_the_sites_endpoint_is_a_write_route_now(client, db_calls):
+    """POST /api/sites is a write route: it needs a login and a token."""
+    response = client.post(
+        "/api/sites", json={"name": "Portal", "url": "https://portal.test"}
+    )
+
+    assert response.status_code == 401
+    assert "error" in response.get_json()
+    assert db_calls == []
+
+
+@pytest.mark.parametrize("path", ["/api/sites/1/checks", "/api/incidents"])
 def test_a_rejected_post_does_not_open_a_connection(client, db_calls, connection, path):
     """A rejected request never touches the database."""
     client.post(path)

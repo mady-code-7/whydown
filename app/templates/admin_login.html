@@ -1,0 +1,31 @@
+{# The login page of the admin area (spec section 8.5 and 12).
+
+   The page never shows the password and never shows whether it is right.
+   The message is fixed text, so nothing from the environment can end up in
+   the page. #}
+{% extends "base.html" %}
+{% block title %}WhyDown - admin login{% endblock %}
+{% block content %}
+  <h1>Admin login</h1>
+
+  {% if not admin_available %}
+    <p class="error">The admin area is not available. No admin password is configured.</p>
+  {% else %}
+    {% if error %}
+      <p class="error">{{ error }}</p>
+    {% endif %}
+
+    <form class="admin-form" method="post" action="{{ url_for('admin_login_submit') }}">
+      {# The token belongs to the session: a request without it is refused. #}
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% if request.args.get('next') %}
+        <input type="hidden" name="next" value="{{ request.args.get('next') }}">
+      {% endif %}
+
+      <label for="password">Admin password</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
+
+      <button type="submit">Log in</button>
+    </form>
+  {% endif %}
+{% endblock %}

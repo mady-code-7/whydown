@@ -219,6 +219,49 @@ def add_site(
 
 
 @_db_errors
+def get_site(site_id: int, conn: Any | None = None) -> dict[str, Any] | None:
+    """Return one site, or None when there is no site with this id."""
+    query = (
+        "SELECT id, name, url, expected_status, keyword, slow_threshold_ms, "
+        "enabled FROM sites WHERE id = %s"
+    )
+
+    with _connection(conn) as session, _cursor(session) as cur:
+        cur.execute(query, (site_id,))
+        row = cur.fetchone()
+
+    if not row:
+        return None
+    return dict(row)
+
+
+@_db_errors
+def update_site(
+    site_id: int,
+    name: str,
+    url: str,
+    expected_status: int = 200,
+    keyword: str | None = None,
+    slow_threshold_ms: int = 5000,
+    enabled: bool = True,
+    conn: Any | None = None,
+) -> bool:
+    """Change the values of a site and report whether it was changed."""
+    query = """UPDATE sites
+               SET name = %s, url = %s, expected_status = %s, keyword = %s,
+                   slow_threshold_ms = %s, enabled = %s
+               WHERE id = %s"""
+    params = (name, url, expected_status, keyword, slow_threshold_ms, enabled, site_id)
+
+    with _connection(conn) as session, _cursor(session) as cur:
+        cur.execute(query, params)
+        updated = cur.rowcount
+        session.commit()
+
+    return bool(updated and updated > 0)
+
+
+@_db_errors
 def delete_site(site_id: int, conn: Any | None = None) -> bool:
     """Remove a site. Its check history goes with it (ON DELETE CASCADE)."""
     query = "DELETE FROM sites WHERE id = %s"

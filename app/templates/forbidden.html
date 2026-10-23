@@ -1,0 +1,10 @@
+{# The page that is shown when a request is refused.
+
+   The message is fixed text: it never contains a token, a password or
+   anything from the environment (spec section 12). #}
+{% extends "base.html" %}
+{% block title %}WhyDown - request refused{% endblock %}
+{% block content %}
+  <h1>Request refused</h1>
+  <p class="error">This request was refused. A form that was open for too long is no longer valid - please reload the page and try again.</p>
+{% endblock %}

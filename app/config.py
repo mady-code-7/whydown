@@ -17,12 +17,18 @@ class DatabaseConfig:
 
 @dataclass(frozen=True)
 class AppConfig:
-    """Application configuration."""
+    """Application configuration.
+
+    ``secret_key`` signs the session cookie and ``admin_password`` opens the
+    admin area. Both come from the environment and both are empty by
+    default: a value that is not set must never be a secret of its own
+    (spec section 12).
+    """
     host: str = "0.0.0.0"
     port: int = 8080
     debug: bool = False
-    secret_key: str = "dev-secret-key"
-    admin_password: str = "admin"
+    secret_key: str = ""
+    admin_password: str = ""
     max_sites: int = 20
     cron_secret: str = ""
 
@@ -258,8 +264,8 @@ def load_config() -> Config:
         host=os.getenv("FLASK_HOST", "0.0.0.0"),
         port=int(os.getenv("FLASK_PORT", "8080")),
         debug=os.getenv("FLASK_DEBUG", "false").lower() == "true",
-        secret_key=os.getenv("SECRET_KEY", "dev-secret-key"),
-        admin_password=os.getenv("ADMIN_PASSWORD", "admin"),
+        secret_key=os.getenv("SECRET_KEY", ""),
+        admin_password=os.getenv("ADMIN_PASSWORD", ""),
         max_sites=int(os.getenv("MAX_SITES", "20")),
         cron_secret=cron_secret,
     )

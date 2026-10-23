@@ -24,6 +24,16 @@
            href="{{ url_for('dashboard') }}"{% if active_page == 'overview' %} aria-current="page"{% endif %}>Overview</a>
         <a class="nav-link{% if active_page == 'incidents' %} is-current{% endif %}"
            href="{{ url_for('incidents') }}"{% if active_page == 'incidents' %} aria-current="page"{% endif %}>Incidents</a>
+        {# The admin links are only shown to an admin that is logged in, so
+           a visitor never learns where the admin area is (spec section 12). #}
+        {% if is_admin() %}
+          <a class="nav-link{% if active_page == 'admin' %} is-current{% endif %}"
+             href="{{ url_for('admin_sites') }}">Admin</a>
+          <form class="nav-form" method="post" action="{{ url_for('admin_logout') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="nav-button" type="submit">Log out</button>
+          </form>
+        {% endif %}
       </nav>
     </div>
   </header>
