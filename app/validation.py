@@ -8,6 +8,7 @@ DNS lookups, no network I/O, and no database access.
 from __future__ import annotations
 
 import urllib.parse
+from typing import Any
 
 
 class ValidationError(ValueError):
@@ -59,6 +60,39 @@ def _reject_schemes(url: str, rejected: tuple[str, ...] = (
     if not parsed.scheme:
         return True
     return parsed.scheme not in rejected
+
+
+def check_site_limits(
+    conn: Any,
+    url: str,
+    exclude_id: int | None = None,
+    max_sites: int = 20,
+) -> None:
+    """Check the site-count and URL-uniqueness limits for a site.
+
+    Raises ValidationError when the number of sites has reached ``max_sites``
+    on add, or when the URL already exists for another site.
+
+    Args:
+        conn: A database connection (passed to ``db.count_sites`` and
+            ``db.url_exists``).
+        url: The URL the site would use.
+        exclude_id: When editing a site, the id of the site being edited so
+            that its own URL is not reported as a duplicate.
+        max_sites: The maximum number of sites allowed.
+    """
+    from . import db
+
+    count = db.count_sites(conn=conn)
+    if exclude_id is None and count >= max_sites:
+        raise ValidationError(
+            f"Maximum of {max_sites} sites reached; remove a site before adding another."
+        )
+
+    if db.url_exists(url, exclude_id=exclude_id, conn=conn):
+        raise ValidationError(
+            f"A site with the URL {url} already exists."
+        )
 
 
 def validate_site_input(data: dict) -> dict:

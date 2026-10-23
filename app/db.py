@@ -698,6 +698,39 @@ def purge_old_checks(days: int = 30, conn: Any | None = None) -> int:
     return int(deleted or 0)
 
 
+@_db_errors
+def count_sites(conn: Any | None = None) -> int:
+    """Return the number of monitored sites."""
+    query = "SELECT COUNT(*) AS count FROM sites"
+
+    with _connection(conn) as session, _cursor(session) as cur:
+        cur.execute(query)
+        row = cur.fetchone()
+    return int(row["count"]) if row else 0
+
+
+@_db_errors
+def url_exists(
+    url: str, exclude_id: int | None = None, conn: Any | None = None
+) -> bool:
+    """Check if a URL is already monitored by a different site.
+
+    When ``exclude_id`` is provided, the site with that id is excluded from the
+    check (used when editing a site).
+    """
+    if exclude_id is not None:
+        query = "SELECT 1 FROM sites WHERE url = %s AND id != %s LIMIT 1"
+        params = (url, exclude_id)
+    else:
+        query = "SELECT 1 FROM sites WHERE url = %s LIMIT 1"
+        params = (url,)
+
+    with _connection(conn) as session, _cursor(session) as cur:
+        cur.execute(query, params)
+        row = cur.fetchone()
+    return row is not None
+
+
 # --------------------------------------------------------------------------
 # Command line entry points
 # --------------------------------------------------------------------------

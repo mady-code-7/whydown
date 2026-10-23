@@ -7,16 +7,16 @@ DNS resolution and no network access of any kind.
 from __future__ import annotations
 
 import pytest
+from fake_db import FakeConnection
 
 from app.validation import (
     ValidationError,
     _no_credentials,
     _reject_schemes,
+    check_site_limits,
     validate_site_input,
 )
 
-# ----------------------------------------------------------------------
-# Valid input
 # ----------------------------------------------------------------------
 
 class TestValidInput:
@@ -430,3 +430,69 @@ class TestSlowThreshold:
                 "url": "https://example.com",
                 "slow_threshold_ms": bad,
             })
+
+
+# ----------------------------------------------------------------------
+# check_site_limits
+# ----------------------------------------------------------------------
+
+
+class TestSiteLimits:
+    def test_under_limit_with_unique_url_is_accepted(self):
+        conn = FakeConnection([
+            {"rows": [{"count": 5}], "rowcount": 1},
+            {"rows": [], "rowcount": 0},
+        ])
+        assert check_site_limits(conn=conn, url="https://example.com", max_sites=20) is None
+
+    def test_at_limit_is_rejected(self):
+        conn = FakeConnection([
+            {"rows": [{"count": 20}], "rowcount": 1},
+        ])
+        with pytest.raises(ValidationError, match="Maximum"):
+            check_site_limits(conn=conn, url="https://example.com", max_sites=20)
+
+    def test_over_limit_is_rejected(self):
+        conn = FakeConnection([
+            {"rows": [{"count": 21}], "rowcount": 1},
+        ])
+        with pytest.raises(ValidationError, match="Maximum"):
+            check_site_limits(conn=conn, url="https://example.com", max_sites=20)
+
+    def test_duplicate_url_is_rejected(self):
+        conn = FakeConnection([
+            {"rows": [{"count": 1}], "rowcount": 1},
+            {"rows": [{"id": 2}], "rowcount": 1},
+        ])
+        with pytest.raises(ValidationError, match="already exists"):
+            check_site_limits(conn=conn, url="https://example.com", max_sites=20)
+
+    def test_duplicate_url_with_exclude_id_is_accepted(self):
+        conn = FakeConnection([
+            {"rows": [{"count": 1}], "rowcount": 1},
+            {"rows": [], "rowcount": 0},
+        ])
+        assert check_site_limits(
+            conn=conn, url="https://example.com", exclude_id=1, max_sites=20
+        ) is None
+
+    def test_new_site_at_limit_but_unique_url(self):
+        conn = FakeConnection([
+            {"rows": [{"count": 19}], "rowcount": 1},
+            {"rows": [], "rowcount": 0},
+        ])
+        assert check_site_limits(conn=conn, url="https://example.com", max_sites=20) is None
+
+    def test_custom_max_sites(self):
+        conn = FakeConnection([
+            {"rows": [{"count": 3}], "rowcount": 1},
+        ])
+        with pytest.raises(ValidationError, match="Maximum"):
+            check_site_limits(conn=conn, url="https://example.com", max_sites=3)
+
+    def test_custom_max_sites_under_limit(self):
+        conn = FakeConnection([
+            {"rows": [{"count": 2}], "rowcount": 1},
+            {"rows": [], "rowcount": 0},
+        ])
+        assert check_site_limits(conn=conn, url="https://example.com", max_sites=3) is None
