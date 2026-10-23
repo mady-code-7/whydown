@@ -21,9 +21,10 @@ from flask import (
 )
 
 from . import auth, db
-from .checker import parse_url
 from .config import CRON_SECRET_MIN_LENGTH, config, load_cron_secret
 from .runner import run_all_checks
+from .security import SecurityError, check_url_target
+from .validation import ValidationError, check_site_limits, validate_site_input
 
 logger = logging.getLogger(__name__)
 
@@ -736,116 +737,16 @@ def _as_bool(value: Any) -> bool | None:
     return None
 
 
-def _site_values(
-    data: dict[str, Any], current: dict[str, Any] | None = None
-) -> tuple[dict[str, Any] | None, str | None]:
-    """Return the values of a site, or a message that says what is wrong.
-
-    ``current`` holds the values of the site that is changed: a field that
-    is not sent keeps its value. Without it a new site is created, and
-    then the name and the URL are required.
-    """
-    creating = current is None
-    values: dict[str, Any] = {}
-    if current:
-        values = {key: current[key] for key in SITE_FIELDS if key in current}
-
-    # The name
-    if "name" in data or creating:
-        name = data.get("name")
-        if not isinstance(name, str):
-            return None, "The name must be text."
-        name = name.strip()
-        if not name:
-            return None, "The name is required."
-        if len(name) > MAX_NAME_LENGTH:
-            return None, "The name is too long."
-        values["name"] = name
-
-    # The URL
-    if "url" in data or creating:
-        url = data.get("url")
-        if not isinstance(url, str):
-            return None, "The URL must be text."
-        url = url.strip()
-        if not url:
-            return None, "The URL is required."
-        if len(url) > MAX_URL_LENGTH:
-            return None, "The URL is too long."
-        valid, _scheme, _host, _port, _path, error, _hint = parse_url(url)
-        if not valid:
-            return None, f"The URL is not usable: {error}"
-        values["url"] = url
-
-    # The expected status code
-    if "expected_status" in data:
-        raw = data.get("expected_status")
-        if raw is None or (isinstance(raw, str) and not raw.strip()):
-            values["expected_status"] = DEFAULT_EXPECTED_STATUS
-        else:
-            status = _as_int(raw)
-            if status is None:
-                return None, "The expected status must be a number."
-            if not 100 <= status <= 599:
-                return None, "The expected status must be a number between 100 and 599."
-            values["expected_status"] = status
-    elif creating:
-        values["expected_status"] = DEFAULT_EXPECTED_STATUS
-
-    # The keyword
-    if "keyword" in data:
-        keyword = data.get("keyword")
-        if keyword is None:
-            values["keyword"] = None
-        elif isinstance(keyword, str):
-            keyword = keyword.strip()
-            if len(keyword) > MAX_KEYWORD_LENGTH:
-                return None, "The keyword is too long."
-            values["keyword"] = keyword or None
-        else:
-            return None, "The keyword must be text."
-    elif creating:
-        values["keyword"] = None
-
-    # The slow threshold
-    if "slow_threshold_ms" in data:
-        raw = data.get("slow_threshold_ms")
-        if raw is None or (isinstance(raw, str) and not raw.strip()):
-            values["slow_threshold_ms"] = DEFAULT_SLOW_THRESHOLD_MS
-        else:
-            threshold = _as_int(raw)
-            if threshold is None:
-                return None, "The slow threshold must be a number of milliseconds."
-            if threshold <= 0:
-                return None, "The slow threshold must be a positive number of milliseconds."
-            values["slow_threshold_ms"] = threshold
-    elif creating:
-        values["slow_threshold_ms"] = DEFAULT_SLOW_THRESHOLD_MS
-
-    # The enabled flag
-    if "enabled" in data:
-        enabled = _as_bool(data.get("enabled"))
-        if enabled is None:
-            return None, "The enabled flag must be true or false."
-        values["enabled"] = enabled
-    elif creating:
-        # An admin checkbox is not ticked when the box is unchecked, so the
-        # new site defaults to being monitored. When editing, an absent
-        # field keeps the current value: unchecking the box really disables
-        # the site instead of silently leaving it on.
-        values["enabled"] = current.get("enabled", True) if current else True
-
-    return values, None
-
-
 def _form_values(form: Any) -> dict[str, Any]:
     """Return the values of a form of the admin area.
 
     A checkbox that is not ticked is not sent at all, so the flag is read
     from the presence of the field: an unchecked box keeps its default
-    value.
+    value.  The CSRF token and the password are deliberately excluded so
+    that neither appears in a page that re-shows the form (spec section
+    12).
     """
-    return dict(form)
+    return {k: v for k, v in form.items() if k != "csrf_token" and k != auth.PASSWORD_FIELD}
 
 
 def _max_sites() -> int:
@@ -1005,14 +906,22 @@ def register_api_write_routes(app: Flask) -> None:
         if not isinstance(data, dict):
             return _api_error("The body must be a JSON object.", 400)
 
-        values, error = _site_values(data)
+        values, error = _validated_site_values(data)
         if error:
             return _api_error(error, 400)
 
+        # The SSRF filter resolves the URL, so it needs a database connection
+        # for the duplicate-URL check. The checks run in order: validate the
+        # input first, then the target, then the limits. Nothing is written
+        # before all three pass.
         try:
             with _api_connection() as conn:
-                if len(db.list_sites(conn=conn)) >= _max_sites():
-                    return _api_error("Too many sites are monitored.", 400)
+                target_error = _check_site_target(values["url"])
+                if target_error:
+                    return _api_error(target_error, 400)
+                limit_error = _check_site_limits(values["url"], conn)
+                if limit_error:
+                    return _api_error(limit_error, 400)
                 site_id = db.add_site(conn=conn, **values)
         except Exception as exc:  # noqa: BLE001 - any database failure is a 503
             logger.error("Adding a site failed (%s)", type(exc).__name__)
@@ -1039,12 +948,23 @@ def register_api_write_routes(app: Flask) -> None:
         if current is None:
             return _api_error("Unknown site.", 404)
 
-        values, error = _site_values(data, current=current)
+        values, error = _validated_site_values(data, current=current)
         if error:
             return _api_error(error, 400)
 
+        # The SSRF filter is run only when the URL changed, so editing the name
+        # of a site does not trigger a second DNS lookup.
         try:
             with _api_connection() as conn:
+                if values["url"] != current.get("url"):
+                    target_error = _check_site_target(values["url"])
+                    if target_error:
+                        return _api_error(target_error, 400)
+                limit_error = _check_site_limits(
+                    values["url"], conn, exclude_id=site_id
+                )
+                if limit_error:
+                    return _api_error(limit_error, 400)
                 updated = db.update_site(site_id, conn=conn, **values)
         except Exception as exc:  # noqa: BLE001 - any database failure is a 503
             logger.error("Updating site %s failed (%s)", site_id, type(exc).__name__)
@@ -1157,14 +1077,19 @@ def register_admin_routes(app: Flask) -> None:
     @auth.csrf_protect
     def admin_add_site():
         """Add a site from the admin page."""
-        values, error = _site_values(_form_values(request.form))
+        form_data = _form_values(request.form)
+        values, error = _validated_site_values(form_data)
         if error:
-            return _admin_page_error(error), 400
+            return _admin_page_error(error, values=form_data), 400
 
         try:
             with _request_connection() as conn:
-                if len(db.list_sites(conn=conn)) >= _max_sites():
-                    return _admin_page_error("Too many sites are monitored."), 400
+                target_error = _check_site_target(values["url"])
+                if target_error:
+                    return _admin_page_error(target_error, values=form_data), 400
+                limit_error = _check_site_limits(values["url"], conn)
+                if limit_error:
+                    return _admin_page_error(limit_error, values=form_data), 400
                 db.add_site(conn=conn, **values)
         except Exception as exc:  # noqa: BLE001 - any database failure is a 503
             logger.error("Adding a site failed (%s)", type(exc).__name__)
@@ -1187,12 +1112,24 @@ def register_admin_routes(app: Flask) -> None:
         if current is None:
             return render_template("not_found.html"), 404
 
-        values, error = _site_values(_form_values(request.form), current=current)
+        form_data = _form_values(request.form)
+        values, error = _validated_site_values(form_data, current=current)
         if error:
-            return _admin_page_error(error), 400
+            return _admin_page_error(error, values=form_data), 400
 
+        # The SSRF filter is run only when the URL changed, so editing the name
+        # of a site does not trigger a second DNS lookup.
         try:
             with _request_connection() as conn:
+                if values["url"] != current.get("url"):
+                    target_error = _check_site_target(values["url"])
+                    if target_error:
+                        return _admin_page_error(target_error, values=form_data), 400
+                limit_error = _check_site_limits(
+                    values["url"], conn, exclude_id=site_id
+                )
+                if limit_error:
+                    return _admin_page_error(limit_error, values=form_data), 400
                 db.update_site(site_id, conn=conn, **values)
         except Exception as exc:  # noqa: BLE001 - any database failure is a 503
             logger.error("Updating site %s failed (%s)", site_id, type(exc).__name__)
@@ -1218,14 +1155,126 @@ def register_admin_routes(app: Flask) -> None:
         return redirect(url_for("admin_sites"))
 
 
-def _admin_page_error(message: str) -> Any:
+def _safe_target_message(exc: SecurityError) -> str:
+    """Return a short message for a SecurityError that never shows an IP.
+
+    The messages of a SecurityError may contain resolved IP addresses or
+    IP literals that must never be revealed to the user (spec section 12).
+    """
+    import re
+
+    message = str(exc)
+    # Strip IPv4 literals
+    message = re.sub(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", "the target", message)
+    # Strip IPv6 literals
+    message = re.sub(
+        r"\b(?:[0-9a-fA-F]{1,4}:){2,}[0-9a-fA-F:]+\b", "the target", message
+    )
+    return message
+
+
+def _admin_page_error(
+    message: str, values: dict[str, Any] | None = None
+) -> Any:
     """Render the admin page with a message that says what is wrong."""
     try:
         with _request_connection() as conn:
             sites = db.list_sites(conn=conn)
     except Exception:  # noqa: BLE001 - the message is more important here
         sites = []
-    return render_template("admin_sites.html", sites=sites, error=message)
+    return render_template(
+        "admin_sites.html", sites=sites, error=message, values=values
+    )
+
+
+def _coerce_form_values(data: dict[str, Any]) -> dict[str, Any]:
+    """Coerce form-style string values to the types validate_site_input expects.
+
+    Form data arrives as strings (e.g. expected_status="200") while JSON data
+    arrives with proper types (e.g. expected_status=200). This helper makes both
+    look the same to validate_site_input before it is called.
+    """
+    result = dict(data)
+    for key in ("expected_status", "slow_threshold_ms"):
+        if key in result and isinstance(result[key], str):
+            text = result[key].strip()
+            if text.isdecimal():
+                result[key] = int(text)
+    # The enabled flag is not handled by validate_site_input; it is applied
+    # by the caller. Coerce a string "true"/"false" from the form now so the
+    # validation step does not choke on it (it ignores unknown keys).
+    if "enabled" in result and isinstance(result["enabled"], str):
+        result["enabled"] = result["enabled"].lower() in ("true", "1", "on", "yes")
+    return result
+
+
+def _validated_site_values(
+    data: dict[str, Any], current: dict[str, Any] | None = None
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Validate a site input dict and return (values, error).
+
+    Calls validate_site_input for the text-level checks and applies the
+    enabled flag separately. For edits, submitted fields are merged with the
+    current values so that a partial update (e.g. only the name) keeps the
+    other fields.
+
+    Returns
+    -------
+    tuple[dict, str | None]
+        On success, values contains all site fields ready for
+        db.add_site / db.update_site. On failure, values is None and error
+        is a short message for the user.
+    """
+    creating = current is None
+    # Merge submitted fields with the current values so a partial edit keeps
+    # the other fields.
+    if not creating:
+        merged: dict[str, Any] = {
+            k: v for k, v in current.items() if k in SITE_FIELDS
+        }
+        merged.update(data)
+        work = merged
+    else:
+        work = dict(data)
+
+    # Coerce form-style string values to the types validate_site_input expects.
+    work = _coerce_form_values(work)
+
+    try:
+        values = validate_site_input(work)
+    except ValidationError as exc:
+        return None, str(exc)
+
+    # The enabled flag is not validated by validate_site_input.
+    if "enabled" in work:
+        enabled = _as_bool(work["enabled"])
+        if enabled is None:
+            return None, "The enabled flag must be true or false."
+        values["enabled"] = enabled
+    elif creating:
+        values["enabled"] = True
+    else:
+        values["enabled"] = current.get("enabled", True)
+
+    return values, None
+
+
+def _check_site_target(url: str) -> str | None:
+    """Run check_url_target on a URL and return an error message, or None."""
+    try:
+        check_url_target(url)
+    except SecurityError as exc:
+        return _safe_target_message(exc)
+    return None
+
+
+def _check_site_limits(url: str, conn: Any, *, exclude_id: int | None = None) -> str | None:
+    """Run check_site_limits on a URL and return an error message, or None."""
+    try:
+        check_site_limits(conn=conn, url=url, exclude_id=exclude_id, max_sites=_max_sites())
+    except ValidationError as exc:
+        return str(exc)
+    return None
 
 
 def register_checker_routes(app: Flask) -> None:

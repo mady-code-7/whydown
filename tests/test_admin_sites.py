@@ -11,11 +11,13 @@ routes are always used with a logged in admin and a CSRF token.
 from __future__ import annotations
 
 import re
+from typing import Any
 
 import pytest
 from fake_db import FakeConnection
 
 from app import create_app, db
+from app.security import SecurityError
 
 ADMIN_PASSWORD = "correct-horse-battery-staple"
 
@@ -73,9 +75,13 @@ def fake_db(monkeypatch):
         },
     )
     record("list_sites", [])
+    record("count_sites", 0)
+    record("url_exists", False)
     record("site_summaries", [])
     record("get_recent_checks", [])
     record("list_incidents", [])
+    # The SSRF filter resolves the URL, so tests must not reach the network.
+    monkeypatch.setattr("app.routes.check_url_target", lambda url: None)
     monkeypatch.setattr(db, "_connect", lambda: FakeConnection())
 
     return calls
@@ -229,9 +235,7 @@ def test_the_api_refuses_a_body_that_is_not_json(client, fake_db):
 
 def test_the_api_refuses_more_sites_than_allowed(client, fake_db, monkeypatch):
     """The number of monitored sites is limited (spec section 8.1)."""
-    monkeypatch.setattr(
-        db, "list_sites", lambda *a, **k: [{"id": i} for i in range(20)]
-    )
+    monkeypatch.setattr(db, "count_sites", lambda *a, **k: 20)
 
     response = client.post(
         "/api/sites", json=NEW_SITE, headers={"X-CSRF-Token": token_of(client)}
@@ -254,6 +258,74 @@ def test_a_failing_database_answers_503(client, fake_db, monkeypatch):
 
     assert response.status_code == 503
     assert "error" in response.get_json()
+
+
+def test_the_api_refuses_a_blocked_target(client, fake_db, monkeypatch):
+    """A URL that resolves to a private address is refused before storage."""
+    def check(url):
+        raise SecurityError("Resolved address 127.0.0.1 for 'localhost' is private or non-routable")
+
+    monkeypatch.setattr("app.routes.check_url_target", check)
+
+    response = client.post(
+        "/api/sites",
+        json={"name": "Local", "url": "http://localhost/"},
+        headers={"X-CSRF-Token": token_of(client)},
+    )
+
+    assert response.status_code == 400
+    assert "error" in response.get_json()
+    assert "127.0.0.1" not in response.get_json()["error"]
+    assert write_calls(fake_db, "add_site") == []
+
+
+def test_the_api_refuses_a_duplicate_url(client, fake_db, monkeypatch):
+    """A URL that already exists is refused."""
+    monkeypatch.setattr(db, "url_exists", lambda *a, **k: True)
+
+    response = client.post(
+        "/api/sites",
+        json={"name": "Portal", "url": "https://portal.test"},
+        headers={"X-CSRF-Token": token_of(client)},
+    )
+
+    assert response.status_code == 400
+    assert "already exists" in response.get_json()["error"]
+    assert write_calls(fake_db, "add_site") == []
+
+
+def test_the_api_allows_a_duplicate_url_when_editing(client, fake_db, monkeypatch):
+    """Editing a site keeps its own URL."""
+    monkeypatch.setattr(db, "url_exists", lambda url, exclude_id=None, **k: False)
+
+    response = client.put(
+        "/api/sites/1",
+        json={"name": "New name"},
+        headers={"X-CSRF-Token": token_of(client)},
+    )
+
+    assert response.status_code == 200
+    call = write_calls(fake_db, "update_site")[0]
+    assert call["kwargs"]["url"] == "https://portal.test"
+
+
+def test_the_api_does_not_resolve_the_url_when_only_the_name_changes(client, fake_db, monkeypatch):
+    """Editing the name does not trigger a DNS lookup."""
+    calls = {"check": 0}
+
+    def check(url):
+        calls["check"] += 1
+
+    monkeypatch.setattr("app.routes.check_url_target", check)
+
+    response = client.put(
+        "/api/sites/1",
+        json={"name": "New name"},
+        headers={"X-CSRF-Token": token_of(client)},
+    )
+
+    assert response.status_code == 200
+    assert calls["check"] == 0
 
 
 # --------------------------------------------------------------------------
@@ -391,7 +463,49 @@ def test_the_admin_page_refuses_a_bad_url(client, fake_db):
     )
 
     assert response.status_code == 400
-    assert "not usable" in response.get_data(as_text=True)
+    assert "URL scheme must be http or https" in response.get_data(as_text=True)
+    assert write_calls(fake_db, "add_site") == []
+
+
+def test_the_admin_page_refuses_a_blocked_target(client, fake_db, monkeypatch):
+    """A form with a private URL shows the message and writes nothing."""
+    token = token_of(client)
+
+    def check(url):
+        raise SecurityError("Resolved address 127.0.0.1 for 'localhost' is private or non-routable")
+
+    monkeypatch.setattr("app.routes.check_url_target", check)
+
+    response = client.post(
+        "/admin/sites",
+        data={
+            "csrf_token": token,
+            "name": "Local",
+            "url": "http://localhost/",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "127.0.0.1" not in response.get_data(as_text=True)
+    assert write_calls(fake_db, "add_site") == []
+
+
+def test_the_admin_page_refuses_a_duplicate_url(client, fake_db, monkeypatch):
+    """A form with a duplicate URL shows the message and writes nothing."""
+    token = token_of(client)
+    monkeypatch.setattr(db, "url_exists", lambda *a, **k: True)
+
+    response = client.post(
+        "/admin/sites",
+        data={
+            "csrf_token": token,
+            "name": "Portal",
+            "url": "https://portal.test",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "already exists" in response.get_data(as_text=True)
     assert write_calls(fake_db, "add_site") == []
 
 
@@ -414,6 +528,31 @@ def test_the_admin_page_changes_a_site(client, fake_db):
     call = write_calls(fake_db, "update_site")[0]
     assert call["args"][0] == 1
     assert call["kwargs"]["name"] == "New name"
+
+
+def test_the_admin_page_refuses_a_blocked_target_on_edit(client, fake_db, monkeypatch):
+    """Editing a site to a private URL shows the message and writes nothing."""
+    token = token_of(client)
+
+    def check(url):
+        raise SecurityError("Resolved address 127.0.0.1 for 'localhost' is private or non-routable")
+
+    monkeypatch.setattr("app.routes.check_url_target", check)
+
+    response = client.post(
+        "/admin/sites/1/edit",
+        data={
+            "csrf_token": token,
+            "name": "Local",
+            "url": "http://localhost/",
+            "expected_status": "200",
+            "slow_threshold_ms": "5000",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "127.0.0.1" not in response.get_data(as_text=True)
+    assert write_calls(fake_db, "update_site") == []
 
 
 def test_the_admin_page_removes_a_site(client, fake_db):
@@ -440,3 +579,78 @@ def test_the_admin_page_answers_404_for_an_unknown_site(client, fake_db, monkeyp
 
     assert response.status_code == 404
     assert write_calls(fake_db, "update_site") == []
+
+
+# --------------------------------------------------------------------------
+# Re-rendering after a failed write (Phase 5B-3)
+# --------------------------------------------------------------------------
+
+def _typed_values_present(response: Any) -> None:
+    """Assert every typed field of the add form appears in the error page."""
+    page = response.get_data(as_text=True)
+    # ``values`` keys survive validation: a failed add carries them back.
+    assert 'value="Portal"' in page
+    assert 'value="not a url"' in page
+    assert 'value="200"' in page            # expected status from the typed value
+    assert 'value="welcome"' in page       # optional keyword preserved
+    assert 'value="1500"' in page          # slow threshold from the typed value
+
+
+def test_failed_add_shows_the_typed_values(client, fake_db):
+    """A failed add re-shows the values the admin typed."""
+    token = token_of(client)
+    response = client.post(
+        "/admin/sites",
+        data={
+            "csrf_token": token,
+            "name": "Portal",
+            "url": "not a url",
+            "expected_status": "200",
+            "keyword": "welcome",
+            "slow_threshold_ms": "1500",
+        },
+    )
+
+    assert response.status_code == 400
+    _typed_values_present(response)
+    assert write_calls(fake_db, "add_site") == []
+
+
+def test_failed_edit_shows_the_typed_values(client, fake_db):
+    """A failed edit re-shows the values the admin typed."""
+    token = token_of(client)
+    response = client.post(
+        "/admin/sites/1/edit",
+        data={
+            "csrf_token": token,
+            "name": "Portal",
+            "url": "not a url",
+            "expected_status": "200",
+            "keyword": "welcome",
+            "slow_threshold_ms": "1500",
+        },
+    )
+
+    assert response.status_code == 400
+    _typed_values_present(response)
+    assert write_calls(fake_db, "update_site") == []
+
+
+def test_script_is_escaped_in_a_field_value(client, fake_db):
+    """A value containing markup is escaped, never injected as HTML."""
+    token = token_of(client)
+    response = client.post(
+        "/admin/sites",
+        data={
+            "csrf_token": token,
+            "name": "<script>alert('xss')</script>",
+            "url": "not a url",
+        },
+    )
+
+    assert response.status_code == 400
+    page = response.get_data(as_text=True)
+    assert "<script>" not in page
+    assert "&lt;script&gt;" in page
+    # The attacker's payload did not create a usable script tag.
+    assert "<script>alert(" not in page

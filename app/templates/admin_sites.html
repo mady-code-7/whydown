@@ -3,7 +3,12 @@
    Every form carries the CSRF token of the session, so a request without
    the token is refused. Every value comes from the database and is
    printed with the normal Jinja2 escaping - the unsafe filter is never
-   used, so a site name can never inject markup into the page. #}
+   used, so a site name can never inject markup into the page.
+
+   When a write was refused, the values the user typed are handed back in
+   ``values`` and the forms keep them, so the visitor can correct and
+   resubmit them. Without ``values`` the defaults of a new site and the
+   stored values of a site are shown. #}
 {% extends "base.html" %}
 {% block title %}WhyDown - admin{% endblock %}
 {% block content %}
@@ -14,24 +19,26 @@
     <p class="error">{{ error }}</p>
   {% endif %}
 
+  {% set values = values if values is defined else {} %}
+
   <h2>Add a site</h2>
   <form class="admin-form" method="post" action="{{ url_for('admin_add_site') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     <label for="new-name">Name</label>
-    <input type="text" id="new-name" name="name" maxlength="200" required>
+    <input type="text" id="new-name" name="name" maxlength="200" required value="{{ values.get('name', '') }}">
 
     <label for="new-url">URL</label>
-    <input type="url" id="new-url" name="url" maxlength="2000" required>
+    <input type="url" id="new-url" name="url" maxlength="2000" required value="{{ values.get('url', '') }}">
 
     <label for="new-status">Expected status code</label>
-    <input type="number" id="new-status" name="expected_status" value="200" min="100" max="599">
+    <input type="number" id="new-status" name="expected_status" value="{{ values.get('expected_status') or '200' }}" min="100" max="599">
 
     <label for="new-keyword">Keyword (optional)</label>
-    <input type="text" id="new-keyword" name="keyword" maxlength="200">
+    <input type="text" id="new-keyword" name="keyword" maxlength="200" value="{{ values.get('keyword', '') }}">
 
     <label for="new-threshold">Slow threshold (ms)</label>
-    <input type="number" id="new-threshold" name="slow_threshold_ms" value="5000" min="1">
+    <input type="number" id="new-threshold" name="slow_threshold_ms" value="{{ values.get('slow_threshold_ms') or '5000' }}" min="1">
 
     <button type="submit">Add site</button>
   </form>
@@ -45,22 +52,22 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
           <label for="name-{{ site.id }}">Name</label>
-          <input type="text" id="name-{{ site.id }}" name="name" maxlength="200" value="{{ site.name }}" required>
+          <input type="text" id="name-{{ site.id }}" name="name" maxlength="200" value="{{ values.get('name', site.name) }}" required>
 
           <label for="url-{{ site.id }}">URL</label>
-          <input type="url" id="url-{{ site.id }}" name="url" maxlength="2000" value="{{ site.url }}" required>
+          <input type="url" id="url-{{ site.id }}" name="url" maxlength="2000" value="{{ values.get('url', site.url) }}" required>
 
           <label for="status-{{ site.id }}">Expected status code</label>
-          <input type="number" id="status-{{ site.id }}" name="expected_status" value="{{ site.expected_status }}" min="100" max="599">
+          <input type="number" id="status-{{ site.id }}" name="expected_status" value="{{ values.get('expected_status', site.expected_status) }}" min="100" max="599">
 
           <label for="keyword-{{ site.id }}">Keyword (optional)</label>
-          <input type="text" id="keyword-{{ site.id }}" name="keyword" maxlength="200" value="{{ site.keyword or '' }}">
+          <input type="text" id="keyword-{{ site.id }}" name="keyword" maxlength="200" value="{{ values.get('keyword', site.keyword or '') }}">
 
           <label for="threshold-{{ site.id }}">Slow threshold (ms)</label>
-          <input type="number" id="threshold-{{ site.id }}" name="slow_threshold_ms" value="{{ site.slow_threshold_ms }}" min="1">
+          <input type="number" id="threshold-{{ site.id }}" name="slow_threshold_ms" value="{{ values.get('slow_threshold_ms', site.slow_threshold_ms) }}" min="1">
 
           <label for="enabled-{{ site.id }}">
-            <input type="checkbox" id="enabled-{{ site.id }}" name="enabled" value="true"{% if site.enabled %} checked{% endif %}>
+            <input type="checkbox" id="enabled-{{ site.id }}" name="enabled" value="true"{% if ('enabled' in values and values['enabled']) or ('enabled' not in values and site.enabled) %} checked{% endif %}>
             Monitored
           </label>
 

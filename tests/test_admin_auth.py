@@ -109,9 +109,13 @@ def fake_db(monkeypatch):
         },
     )
     record("list_sites", [])
+    record("count_sites", 0)
+    record("url_exists", False)
     record("site_summaries", [])
     record("get_recent_checks", [])
     record("list_incidents", [])
+    # The SSRF filter resolves the URL, so tests must not reach the network.
+    monkeypatch.setattr("app.routes.check_url_target", lambda url: None)
     monkeypatch.setattr(db, "_connect", lambda: FakeConnection())
 
     return recorder
