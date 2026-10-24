@@ -31,4 +31,39 @@ flowchart TD
 
 Boxes marked planned are not deployed yet.
 
+## 2. One check run
+
+This sequence diagram shows one scheduled run, triggered by the planned external scheduler.
+
+```mermaid
+sequenceDiagram
+    participant S as cron-job.org planned
+    participant R as routes.py
+    participant N as runner.py
+    participant K as checker.py
+    participant D as db.py
+    participant I as incidents.py
+    participant A as alerts.py
+    participant T as Telegram
+
+    S->>R: GET /run-checks
+    R->>N: run_all_checks
+    N->>D: list_sites
+    loop for each site
+        N->>K: check_url
+        K->>K: resolve_dns, connect_tcp, do_tls, do_http
+        K->>K: classify_result
+        K-->>N: result
+        N->>D: save_check
+        N->>I: process_check
+        N->>A: send_alert when an incident opens or closes
+        A->>T: Telegram message
+    end
+    N->>D: purge_old_checks
+    N-->>R: run summary
+    R-->>S: JSON answer
+```
+
+Function names are taken from the code; the scheduler is planned, not deployed yet.
+
 <!-- NEXT -->
