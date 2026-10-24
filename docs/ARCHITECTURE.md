@@ -66,4 +66,64 @@ sequenceDiagram
 
 Function names are taken from the code; the scheduler is planned, not deployed yet.
 
+## 3. Database
+
+This diagram shows the tables defined in docs/init_db.sql.
+
+```mermaid
+erDiagram
+    sites {
+        int id PK
+        text name
+        text url
+        int expected_status
+        text keyword
+        int slow_threshold_ms
+        boolean enabled
+        timestamp created_at
+    }
+    checks {
+        bigint id PK
+        int site_id FK
+        timestamp checked_at
+        int status_code
+        text result
+        text failed_stage
+        int dns_ms
+        int tcp_ms
+        int tls_ms
+        int ttfb_ms
+        int total_ms
+        text resolved_ip
+        timestamp cert_expires_at
+        boolean cert_expiring_soon
+        text error_detail
+    }
+    incidents {
+        int id PK
+        int site_id FK
+        timestamp started_at
+        timestamp ended_at
+        text failure_type
+        int consecutive_failures
+    }
+    alert_log {
+        int id PK
+        int incident_id FK
+        int site_id FK
+        text kind
+        timestamp sent_at
+        text channel
+        boolean success
+        timestamp cert_expires_at
+        int cert_threshold_days
+    }
+    sites ||--o{ checks : "has"
+    sites ||--o{ incidents : "opens"
+    sites ||--o{ alert_log : "has"
+    incidents |o--o{ alert_log : "logs"
+```
+
+Source: docs/init_db.sql. Column types are simplified.
+
 <!-- NEXT -->
