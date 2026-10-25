@@ -63,10 +63,14 @@ build/
 CLAUDE.md
 .claude/
 
-# Ignore all files in docs/ except for the spec and init scripts
+# Ignore all files in docs/ except the spec, the init script and the project documents
 docs/*
 !docs/SPEC.md
 !docs/init_db.sql
+!docs/ARCHITECTURE.md
+!docs/DEFECT_LOG.md
+!docs/TEST_PLAN.md
+!docs/FREE_TIER_CHECKLIST.md
 
 # For future web deployment
 deflategzip
