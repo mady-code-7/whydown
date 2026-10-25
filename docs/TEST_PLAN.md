@@ -92,13 +92,41 @@ WhyDown includes a mock failure server (`tests/mock_server.py`) that supports:
 | T11 | `tests/test_incidents.py::test_exactly_n_failures_open_one_incident` + `tests/test_runner_alerts.py::test_a_down_alert_is_sent_when_an_incident_opens` | | |
 | T12 | `tests/test_incidents.py::test_a_failure_while_an_incident_is_open_opens_no_second_one` + `tests/test_alerts.py::test_a_second_down_alert_for_the_same_incident_is_not_sent` | | |
 | T13 | `tests/test_incidents.py::test_the_first_up_result_after_an_incident_closes_it` + `tests/test_runner_alerts.py::test_a_recovery_alert_is_sent_when_an_incident_closes` | | |
-| T14 | | | App restart mid-incident - no test of alert state persistence across process restart (only fake DB memory tests exist) |
+| T14 | | Manual test on the deployed Render service, 2026-10-25: PASS (see Deployment Tests) | |
 | T15 | `tests/test_checker_integration.py::TestSsrfFilter::test_loopback_is_blocked_without_the_test_flag` | | |
 | T16 | `tests/test_run_checks.py::test_missing_token_returns_401` | | |
 | T17 | `tests/test_validation.py::TestBadSchemes::test_rejected_scheme_is_refused`, `tests/test_validation.py::TestBadSchemes::test_empty_scheme_is_refused`, `tests/test_validation.py::TestCredentials::test_url_with_username_is_rejected`, `tests/test_validation.py::TestCredentials::test_url_with_password_is_rejected`, `tests/test_validation.py::TestMalformedUrls::test_malformed_ipv6_url_is_rejected`, `tests/test_validation.py::TestUrlWhitespace::test_url_with_whitespace_is_rejected`, `tests/test_validation.py::TestUrlWithoutHostname::test_url_without_hostname_is_rejected`, `tests/test_validation.py::TestUrlWithoutHostname::test_url_with_empty_netloc_is_rejected` | | |
 | T18 | `tests/load_test.py` (PASS: about 10 to 15 s across runs (measured 10,007 ms and 15,023 ms), budget 25,000 ms) | | |
 | T19 | `tests/test_alerts.py::test_a_failing_telegram_call_does_not_raise` + `tests/test_alerts.py::test_a_failing_telegram_call_is_logged_as_a_failed_attempt` | | |
 | T20 | `tests/test_checker_integration.py::TestKeywordMissing::test_keyword_missing_is_reported` | | |
+
+## Deployment Tests
+
+Run on 2026-10-25 against the deployed system: a Render free web service, the Supabase database, and a cron-job.org job that calls /run-checks every 10 minutes with the token in the X-Cron-Token header. These are manual tests. The evidence is the Telegram chat, the Incidents page and the cron-job.org history.
+
+### End-to-end test with the scheduler
+
+- The test site render-test (https://example.org) was given the expected status code 404, so every check of it fails as HTTP_4XX.
+- Every run in the cron-job.org history screenshots returned 200 OK, in about 3.4 to 5.9 s.
+- After 3 consecutive failures one incident was opened for render-test (started 2026-10-25 07:30:50 UTC, failure HTTP_4XX), and one Telegram DOWN alert arrived.
+- The expected status code was set back to 200. The next run closed the incident, and one Telegram RECOVERY alert arrived (downtime 4h 49m 44s).
+- The incident stayed open for hours because the scheduler was paused between the test windows, to save free instance hours.
+- Result: PASS.
+
+### T14: restart in the middle of an incident
+
+- The incident for render-test was open and the DOWN alert had already been sent.
+- The service was restarted with Restart service in the Render dashboard (the log shows gunicorn starting again at about 11:50 UTC).
+- The scheduler was switched on again and the next two scheduled runs finished with 200 OK.
+- No new Telegram message arrived, the Incidents page still showed one incident for render-test with the same start time, and it was still ongoing.
+- This shows that the alert state is read from the database and not kept in the memory of the process.
+- Not covered: a restart while a check run is in progress.
+- Result: PASS.
+
+### Cold start measurement
+
+- Measured on 2026-10-25 at about 06:51 UTC, after the service had been idle overnight with the scheduler paused.
+- The first request to /health took 41.7 s; the second took 0.9 s. This is one measurement.
 
 ## Coverage Report Details
 
@@ -158,7 +186,7 @@ WhyDown includes a mock failure server (`tests/mock_server.py`) that supports:
 ============================== 794 passed in 14.44s ===============================
 Coverage: 95.00%
 Critical modules: checker.py, classifier.py, incidents.py, alerts.py and validation.py at 100%; security.py at 92%
-19 of 20 spec test cases have an automated test; T14 (alert state persistence across process restart) is Not done
+19 of 20 spec test cases have an automated test; T14 (alert state persistence across process restart) was tested manually on the deployed service and passed (see Deployment Tests)
 ```
 
 ## Test Quality Metrics
@@ -197,7 +225,7 @@ HTML coverage report available at `htmlcov/index.html`
 
 PASS **All tests pass**
 PASS **Coverage meets targets** - 95% overall; critical modules: checker.py, classifier.py, incidents.py, alerts.py and validation.py at 100%, security.py at 92%
-PASS **Unit and integration tests** - Unit and integration tests exist; no end-to-end test against a deployed system exists yet
-OPEN **T14** - alert state persistence across process restart is not tested
-OPEN **End-to-end tests** - with the deployed scheduler are not done yet
-OPEN **Deployment measurements** - free-tier deployment on Render and cold-start measurements are not done yet
+PASS **Unit and integration tests** - Unit and integration tests exist; the end-to-end test against the deployed system is recorded under Deployment Tests
+PASS **T14** - alert state persistence across a process restart was tested manually on the deployed Render service (2026-10-25): no second alert, one incident, same start time
+PASS **End-to-end test** - with the deployed scheduler and Telegram (2026-10-25): one DOWN alert after 3 failing runs, one RECOVERY alert, incident closed
+PASS **Deployment measurements** - the free-tier deployment on Render works; the cold start was measured once on 2026-10-25 (41.7 s first request, 0.9 s second)
