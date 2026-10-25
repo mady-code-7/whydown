@@ -165,7 +165,6 @@ Checked on 2026-10-25 in the documentation of each provider.
 
 ## Not confirmed
 
-- The diagrams were checked on mermaid.live only. The GitHub preview of this file did not finish loading when it was tried.
 - Section 2 shows only the scheduled check run. It does not show certificate-expiry alerts (send_cert_alert is imported at app/runner.py line 33) or dashboard page requests.
 - No arrow is drawn from Admin and auth to the database layer, because no import of it was found in app/auth.py or app/validation.py.
 - The render.yaml startCommand (app:create_app) runs with gunicorn on Render (deploy log of 2026-10-25).
