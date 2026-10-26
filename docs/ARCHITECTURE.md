@@ -155,13 +155,15 @@ Checked on 2026-10-25 in the documentation of each provider.
 | Render free web service | 750 free instance hours per workspace per month; a spun-down service uses none; when they run out, free web services are suspended until the next month | A scheduler that calls every 10 minutes keeps the service awake and uses about 720 to 744 hours of a 31-day month, so it cannot run all month with a safety margin |
 | Render free web service | May be suspended for an uncommonly high volume of traffic started by the service; no number is given | Not confirmed for WhyDown; keep the number of monitored sites small |
 | Render free web service | May be restarted at any time | The incident state is kept in the database (T14) |
-| cron-job.org | Free; at most one run per minute; request timeout 30 s; response read up to 64 KB; no limit on jobs per account under fair use | A cold start of 41.7 s is longer than the timeout (D-10) |
-| Supabase free | 500 MB database; the project is paused when user database activity is too low over a week (a few requests a day typically prevents it); a paused project can be restored from the dashboard within 90 days; no automatic backups | The database needs a small visit every day |
+| cron-job.org | Free; at most one run per minute; request timeout 30 s; response read up to 64 KB; no limit on jobs per account under fair use | A call to a sleeping service fails and does not wake it (D-10), so the scheduler works only while the service is awake |
+| Supabase free | 500 MB database; the project is paused when user database activity is too low over a week (a few requests a day typically prevents it); a paused project can be restored from the dashboard within 90 days; no automatic backups | The database gets a small visit by hand every 5 days |
 
 ### Operation
 
 - During development and tests the cron-job.org job (every 10 minutes) is switched on only for short test windows and switched off afterwards, to save free instance hours.
 - The 750 hours reset every month, so the hours that matter are those of the month of the viva.
+- The scheduler cannot wake a sleeping service (D-10). The service is woken by opening the site in a browser, and the cron-job.org job is switched on only after that.
+- To keep the Supabase project from pausing, the author opens the dashboard and adds and removes a small test site in the admin page every 5 days by hand (see docs/FREE_TIER_CHECKLIST.md).
 
 ## Not confirmed
 
@@ -169,5 +171,6 @@ Checked on 2026-10-25 in the documentation of each provider.
 - No arrow is drawn from Admin and auth to the database layer, because no import of it was found in app/auth.py or app/validation.py.
 - The render.yaml startCommand (app:create_app) runs with gunicorn on Render (deploy log of 2026-10-25).
 - The volume of outgoing traffic at which Render suspends a free web service is not known: the Render documentation gives no number. Not confirmed for WhyDown.
-- The cause of the Failed (output too large) result of the first cron-job.org test run after a sleep was not captured (D-10).
+- Why Render answers cron-job.org with an HTML page and does not wake the service is not confirmed (D-10). The meaning of x-render-routing: no-deploy was not found in the Render documentation.
+- Whether a visit every 5 days is enough to keep the Supabase project from pausing is not confirmed; the Supabase documentation says a few requests a day typically prevent it.
 - Section 3 simplifies the column types and does not draw the indexes in docs/init_db.sql.

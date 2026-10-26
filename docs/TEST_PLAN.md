@@ -128,6 +128,12 @@ Run on 2026-10-25 against the deployed system: a Render free web service, the Su
 - Measured on 2026-10-25 at about 06:51 UTC, after the service had been idle overnight with the scheduler paused.
 - The first request to /health took 41.7 s; the second took 0.9 s. This is one measurement.
 
+### Scheduler call to a sleeping service
+
+- Observed on 2026-10-26 with cron-job.org: two scheduled runs (9:31 and 9:33 India time) and one test run (10:27) against the sleeping service all ended with Failed (output too large). The response had Content-Type text/html.
+- The Render log shows no request from cron-job.org and no app start in that time. The service started only when the site was opened in a browser at 9:38.
+- Result: FAIL for a scheduler that is expected to wake the service. Recorded as D-10 (Accepted). The scheduler works while the service is awake (see the end-to-end test).
+
 ## Coverage Report Details
 
 ### Per-Module Coverage (actual)
