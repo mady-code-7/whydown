@@ -30,8 +30,8 @@ Anyone on the internet opens a public page, pastes a website address and sees th
 
 ## 5. Rules
 
-- Check: one check per hour per visitor (identified by IP), any URL. The same URL again inside the hour returns the saved result with the note "Already checked. Result from <time>." No new check is run.
-- Demo switch: environment variable `PUBLIC_RATE_LIMIT_ON`. Set to false only on demo day so several sites can be shown in a row.
+- Check: 50 checks per hour per visitor (identified by IP), any URL. The page is public only until the viva, so 50 is enough for testing and the demo. The same URL again inside the hour returns the saved result with the note "Already checked. Result from <time>." No new check is run. Whether a repeat request counts toward the 50: not decided.
+- Demo switch: environment variable `PUBLIC_RATE_LIMIT_ON` (proposed for the viva day, to show several sites in a row). Not decided. It may not be needed at 50 checks per hour.
 - IP is stored only as a keyed hash, never as plain text. Rows older than 7 days are deleted.
 - Same safety rules as now: SSRF filter after DNS resolution, only http and https, response body read at most 1 MB and never stored, parameterised SQL only, certificate verification stays on.
 - Watch: the button appears only when the site is down. The page shows: "The watch lasts 48 hours. After that we will not alert you."
