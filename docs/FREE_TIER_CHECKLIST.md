@@ -11,13 +11,13 @@ Updated on 2026-10-26. WhyDown runs on free plans: Render (web service), Supabas
 ## Every 5 days (phone alarm at 10:30 PM, about 2 minutes)
 
 1. Open https://whydown.onrender.com/ and wait up to a minute for the page. This wakes the service and reads from the database.
-2. Open /admin/login and log in. Add a site named keepalive with the URL https://example.com, then remove it, then log out. This writes to the database.
+2. Open /admin/login and log in. Add a site named keepalive with the URL https://example.net, then remove it, then log out. Use an address that is not already in the list: on 2026-10-26 the add with the URL of an existing site showed no message and did nothing. This writes to the database.
 3. Close the page. The service falls asleep by itself about 15 minutes later.
 
 ## Every month (about 5 minutes)
 
 1. Render dashboard, Billing, Monthly Included Usage: look at the free instance hours and the outbound bandwidth.
-2. Supabase dashboard: the project must say Active, not Paused. If it says Paused, click Resume project. Look for a warning email from Supabase.
+2. Supabase dashboard: the project must say Active, not Paused. If it says Paused, click Resume project. Look for a warning email from Supabase. The Logs page may show many errors about pg_pgrst_no_exposed_schemas and 503 answers on /rest-admin/v1/ready every half minute. On 2026-10-26 they appeared while the WhyDown service was asleep and the app worked anyway, so they were not caused by a WhyDown request; the exact cause was not confirmed.
 3. cron-job.org, Cronjobs list: whydown run-checks must exist and be switched off (Inactive).
 4. Open the WhyDown dashboard and check that it loads.
 
