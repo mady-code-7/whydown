@@ -86,3 +86,12 @@ CREATE INDEX IF NOT EXISTS idx_alert_log_site_sent ON alert_log (site_id, sent_a
 -- existing database (spec section 17, step 4).
 ALTER TABLE alert_log ADD COLUMN IF NOT EXISTS cert_expires_at TIMESTAMP WITH TIME ZONE;
 ALTER TABLE alert_log ADD COLUMN IF NOT EXISTS cert_threshold_days INTEGER;
+
+CREATE TABLE IF NOT EXISTS public_checks (
+    id BIGSERIAL PRIMARY KEY,
+    visitor_hash TEXT NOT NULL,
+    normalised_url TEXT NOT NULL,
+    result_summary TEXT NOT NULL,
+    checked_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_public_checks_visitor_time ON public_checks (visitor_hash, checked_at);

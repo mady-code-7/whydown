@@ -120,3 +120,46 @@ def test_parse_cert_alert_days_sorts_and_filters():
     assert parse_cert_alert_days("14,7,3") == (3, 7, 14)
     assert parse_cert_alert_days(" 14 , 7 , 0 , -3 ") == (7, 14)
     assert parse_cert_alert_days("0,0") == (3, 7, 14)
+
+
+def test_public_ip_hash_key_defaults_to_empty_string(monkeypatch):
+    """PUBLIC_IP_HASH_KEY should default to an empty string."""
+    monkeypatch.delenv("PUBLIC_IP_HASH_KEY", raising=False)
+
+    cfg = load_config()
+
+    assert cfg.public.ip_hash_key == ""
+
+
+def test_public_rate_limit_per_hour_defaults_to_50(monkeypatch):
+    """PUBLIC_RATE_LIMIT_PER_HOUR should default to 50."""
+    monkeypatch.delenv("PUBLIC_RATE_LIMIT_PER_HOUR", raising=False)
+
+    cfg = load_config()
+
+    assert cfg.public.rate_limit_per_hour == 50
+
+
+def test_public_rate_limit_per_hour_reads_value_from_environment(monkeypatch):
+    """PUBLIC_RATE_LIMIT_PER_HOUR should read the value from environment."""
+    monkeypatch.setenv("PUBLIC_RATE_LIMIT_PER_HOUR", "7")
+
+    cfg = load_config()
+
+    assert cfg.public.rate_limit_per_hour == 7
+
+
+def test_public_rate_limit_per_hour_falls_back_to_50_on_invalid_value(monkeypatch):
+    """PUBLIC_RATE_LIMIT_PER_HOUR should fall back to 50 on invalid environment value."""
+    monkeypatch.setenv("PUBLIC_RATE_LIMIT_PER_HOUR", "abc")
+
+    cfg = load_config()
+
+    assert cfg.public.rate_limit_per_hour == 50
+
+
+def test_public_ip_hash_key_not_in_repr(monkeypatch):
+    from app.config import load_config
+
+    monkeypatch.setenv("PUBLIC_IP_HASH_KEY", "dummy-key-123")
+    assert "dummy-key-123" not in repr(load_config())

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
 
@@ -176,6 +176,18 @@ class RunnerConfig:
 
 
 @dataclass(frozen=True)
+class PublicConfig:
+    """Public check configuration (for the public checks feature).
+
+    These settings control the public checking endpoint:
+    * ``ip_hash_key`` - string used to hash visitor IPs for rate limiting
+    * ``rate_limit_per_hour`` - maximum requests per hour per visitor
+    """
+    ip_hash_key: str = field(default="", repr=False)
+    rate_limit_per_hour: int = 50
+
+
+@dataclass(frozen=True)
 class Config:
     """Complete configuration for WhyDown."""
     database: DatabaseConfig
@@ -185,6 +197,7 @@ class Config:
     network_timeouts: NetworkTimeouts = NetworkTimeouts()
     thresholds: SiteThresholds = SiteThresholds()
     runner: RunnerConfig = RunnerConfig()
+    public: PublicConfig = PublicConfig()
 
     def validate(self) -> list[str]:
         """Validate configuration and return list of errors."""
@@ -279,6 +292,19 @@ def load_config() -> Config:
         per_site_timeout=int(os.getenv("PER_SITE_TIMEOUT", "10")),
     )
 
+    # Parse public rate limit config
+    ip_hash_key = os.getenv("PUBLIC_IP_HASH_KEY", "")
+    rate_limit_per_hour = 50
+    try:
+        rate_limit_per_hour = int(os.getenv("PUBLIC_RATE_LIMIT_PER_HOUR", "50"))
+    except ValueError:
+        rate_limit_per_hour = 50
+
+    public = PublicConfig(
+        ip_hash_key=ip_hash_key,
+        rate_limit_per_hour=rate_limit_per_hour,
+    )
+
     # Parse network timeouts
     network_timeouts = NetworkTimeouts(
         dns_timeout=int(os.getenv("DNS_TIMEOUT", "5")),
@@ -313,6 +339,7 @@ def load_config() -> Config:
         network_timeouts=network_timeouts,
         thresholds=thresholds,
         runner=runner,
+        public=public,
     )
 
 
