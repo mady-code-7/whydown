@@ -18,6 +18,7 @@ from app.security import (
     _is_local_hostname,
     _try_parse_ip_literal,
     check_url_target,
+    hash_visitor,
     is_private_ip,
 )
 
@@ -256,3 +257,45 @@ class TestCheckUrlTarget:
 
         with pytest.raises(SecurityError):
             check_url_target("https://empty.example.com/", resolver=empty_resolver)
+
+
+class TestHashVisitor:
+    """Tests for the hash_visitor function (new security utility)."""
+
+    def test_same_ip_and_same_key_give_the_same_hash(self):
+        result = hash_visitor("203.0.113.7", "my-secret-key")
+        assert result == hash_visitor("203.0.113.7", "my-secret-key")
+
+    def test_two_different_ips_with_the_same_key_give_different_hashes(self):
+        h1 = hash_visitor("203.0.113.7", "my-secret-key")
+        h2 = hash_visitor("198.51.100.22", "my-secret-key")
+        assert h1 != h2
+
+    def test_the_same_ip_with_two_different_keys_gives_different_hashes(self):
+        h1 = hash_visitor("203.0.113.7", "key-a")
+        h2 = hash_visitor("203.0.113.7", "key-b")
+        assert h1 != h2
+
+    def test_the_result_is_64_characters_and_only_hex_digits(self):
+        result = hash_visitor("203.0.113.7", "my-secret-key")
+        assert len(result) == 64
+        assert all(c in "0123456789abcdef" for c in result)
+
+    def test_the_plain_ip_text_is_not_inside_the_result(self):
+        result = hash_visitor("203.0.113.7", "my-secret-key")
+        assert "203.0.113.7" not in result
+
+    def test_empty_key_raises_value_error(self):
+        with pytest.raises(ValueError):
+            hash_visitor("203.0.113.7", "")
+
+    def test_blank_ip_only_spaces_raises_value_error(self):
+        with pytest.raises(ValueError):
+            hash_visitor("  ", "my-secret-key")
+
+    def test_error_message_with_blank_ip_does_not_contain_the_key(
+        self,
+    ):
+        with pytest.raises(ValueError) as exc_info:
+            hash_visitor("  ", "secret-key-xyz")
+        assert "secret-key-xyz" not in str(exc_info.value)

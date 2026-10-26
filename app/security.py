@@ -7,6 +7,8 @@ Implements the security considerations from spec section 12:
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import ipaddress
 import socket
 import threading
@@ -172,3 +174,18 @@ def check_url_target(url: str, resolver: Callable | None = None) -> list[str]:
             raise SecurityError(f"Resolved address {ip} for '{hostname}' is private or non-routable")
 
     return resolved_ips
+
+
+def hash_visitor(ip: str, key: str) -> str:
+    """Return a hex SHA-256 HMAC of a visitor IP under the given key.
+
+    The key and the IP are never included in any error message, so the
+    function can be used for logging without leaking the secret or the
+    visitor's address.
+    """
+    if not key or not key.strip():
+        raise ValueError("PUBLIC_IP_HASH_KEY is not set")
+    ip = ip.strip()
+    if not ip:
+        raise ValueError("visitor IP is empty")
+    return hmac.new(key.encode("utf-8"), ip.encode("utf-8"), hashlib.sha256).hexdigest()
