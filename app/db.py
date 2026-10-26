@@ -731,6 +731,91 @@ def url_exists(
     return row is not None
 
 
+@_db_errors
+def save_public_check(
+    visitor_hash: str,
+    normalised_url: str,
+    result_summary: str,
+    conn: Any | None = None,
+) -> int:
+    """Store one public check and return its new primary key.
+
+    Only metadata is stored - the visitor hash, the normalised URL and the
+    result summary, never a response body.
+    """
+    query = """INSERT INTO public_checks
+               (visitor_hash, normalised_url, result_summary)
+               VALUES (%s, %s, %s)
+               RETURNING id"""
+    params = (visitor_hash, normalised_url, result_summary)
+
+    with _connection(conn) as session, _cursor(session) as cur:
+        cur.execute(query, params)
+        row = cur.fetchone()
+        session.commit()
+
+    if not row or row.get("id") is None:
+        raise DatabaseError("The public check could not be stored")
+    return int(row["id"])
+
+
+@_db_errors
+def count_public_checks(
+    visitor_hash: str,
+    hours: int = 1,
+    conn: Any | None = None,
+) -> int:
+    """Return how many public checks a visitor made in the last ``hours``."""
+    query = (
+        "SELECT COUNT(*) AS count FROM public_checks "
+        "WHERE visitor_hash = %s AND checked_at > NOW() - (%s * INTERVAL '1 hour')"
+    )
+    params = (visitor_hash, hours)
+
+    with _connection(conn) as session, _cursor(session) as cur:
+        cur.execute(query, params)
+        row = cur.fetchone()
+    return int(row["count"]) if row else 0
+
+
+@_db_errors
+def get_recent_public_check(
+    visitor_hash: str,
+    normalised_url: str,
+    hours: int = 1,
+    conn: Any | None = None,
+) -> dict[str, Any] | None:
+    """Return the most recent public check of a visitor for a URL, or None."""
+    query = (
+        "SELECT id, normalised_url, result_summary, checked_at FROM public_checks "
+        "WHERE visitor_hash = %s AND normalised_url = %s "
+        "AND checked_at > NOW() - (%s * INTERVAL '1 hour') "
+        "ORDER BY checked_at DESC, id DESC LIMIT 1"
+    )
+    params = (visitor_hash, normalised_url, hours)
+
+    with _connection(conn) as session, _cursor(session) as cur:
+        cur.execute(query, params)
+        row = cur.fetchone()
+
+    if not row:
+        return None
+    return dict(row)
+
+
+@_db_errors
+def purge_old_public_checks(days: int = 7, conn: Any | None = None) -> int:
+    """Delete public check rows older than ``days`` days and return how many went."""
+    query = "DELETE FROM public_checks WHERE checked_at < NOW() - (%s * INTERVAL '1 day')"
+
+    with _connection(conn) as session:
+        with _cursor(session) as cur:
+            cur.execute(query, (days,))
+            deleted = cur.rowcount
+        session.commit()
+    return int(deleted or 0)
+
+
 # --------------------------------------------------------------------------
 # Command line entry points
 # --------------------------------------------------------------------------

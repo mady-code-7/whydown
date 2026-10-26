@@ -796,3 +796,169 @@ def test_env_file_is_not_loaded_at_import_time():
     }
 
     assert "load_dotenv" not in module_level_calls
+
+
+# --------------------------------------------------------------------------
+# Public checks (Phase 8, part 1A-3)
+# --------------------------------------------------------------------------
+
+def test_save_public_check_inserts_the_values_and_returns_the_new_id(connection):
+    """save_public_check stores the three columns and returns its primary key."""
+    connection.responses = [{"rows": [{"id": 77}], "rowcount": 1}]
+
+    check_id = db.save_public_check(
+        visitor_hash="abc123",
+        normalised_url="https://portal.test/page",
+        result_summary="OK total_ms=12",
+    )
+
+    assert check_id == 77
+    statement = connection.statements[0]
+    assert "INSERT INTO public_checks" in statement.sql
+    assert "RETURNING id" in statement.sql
+    assert statement.params == (
+        "abc123",
+        "https://portal.test/page",
+        "OK total_ms=12",
+    )
+    assert connection.commits == 1
+
+
+def test_save_public_check_without_returned_row_raises_database_error(connection):
+    """A missing RETURNING value is an error, not a silent None."""
+    connection.responses = [{"rows": [], "rowcount": 0}]
+
+    with pytest.raises(db.DatabaseError):
+        db.save_public_check(
+            visitor_hash="abc123",
+            normalised_url="https://portal.test/page",
+            result_summary="OK",
+        )
+
+
+def test_save_public_check_keeps_the_values_out_of_the_sql_text(connection):
+    """The hash, URL and summary are passed as parameters, not SQL text."""
+    connection.responses = [{"rows": [{"id": 1}], "rowcount": 1}]
+
+    db.save_public_check(
+        visitor_hash="hash; DROP TABLE sites; --",
+        normalised_url="https://portal.test/page' OR '1'='1",
+        result_summary="OK",
+    )
+
+    statement = connection.statements[0]
+    assert "DROP TABLE" not in statement.sql
+    assert "OR '1'='1'" not in statement.sql
+    assert statement.params[0] == "hash; DROP TABLE sites; --"
+    assert statement.params[1] == "https://portal.test/page' OR '1'='1"
+
+
+def test_count_public_checks_returns_the_number(connection):
+    """count_public_checks returns the number of matching rows."""
+    connection.responses = [{"rows": [{"count": 4}], "rowcount": 1}]
+
+    assert db.count_public_checks(visitor_hash="abc123", hours=2) == 4
+
+
+def test_count_public_checks_without_a_row_returns_zero(connection):
+    """A window without checks returns 0, not an error."""
+    connection.responses = [{"rows": [], "rowcount": 0}]
+
+    assert db.count_public_checks(visitor_hash="abc123") == 0
+
+
+def test_count_public_checks_passes_visitor_hash_and_hours_as_params(connection):
+    """The hash and the window are parameters, not SQL text."""
+    connection.responses = [{"rows": [{"count": 0}], "rowcount": 0}]
+
+    db.count_public_checks(visitor_hash="abc123", hours=2)
+
+    statement = connection.statements[0]
+    assert "INTERVAL '1 hour'" in statement.sql
+    assert "INTERVAL '2" not in statement.sql
+    assert statement.params == ("abc123", 2)
+
+
+def test_get_recent_public_check_returns_the_newest_row_as_a_dict(connection):
+    """get_recent_public_check returns the row as a dict."""
+    connection.responses = [
+        [
+            {
+                "id": 9,
+                "normalised_url": "https://portal.test/page",
+                "result_summary": "OK total_ms=12",
+                "checked_at": datetime(2026, 10, 21, 12, 0, tzinfo=UTC),
+            }
+        ]
+    ]
+
+    row = db.get_recent_public_check(
+        visitor_hash="abc123",
+        normalised_url="https://portal.test/page",
+        hours=1,
+    )
+
+    assert row == {
+        "id": 9,
+        "normalised_url": "https://portal.test/page",
+        "result_summary": "OK total_ms=12",
+        "checked_at": datetime(2026, 10, 21, 12, 0, tzinfo=UTC),
+    }
+
+
+def test_get_recent_public_check_without_a_row_returns_none(connection):
+    """No matching row is reported as None."""
+    connection.responses = [[]]
+
+    assert (
+        db.get_recent_public_check(
+            visitor_hash="abc123",
+            normalised_url="https://portal.test/page",
+        )
+        is None
+    )
+
+
+def test_get_recent_public_check_passes_hash_url_and_hours_as_params_and_orders_newest_first(connection):
+    """The hash, URL and window are parameters and the newest row wins."""
+    connection.responses = [
+        [
+            {"id": 3, "normalised_url": "https://portal.test/page", "result_summary": "SLOW", "checked_at": datetime(2026, 10, 21, 12, 0, tzinfo=UTC)},
+            {"id": 2, "normalised_url": "https://portal.test/page", "result_summary": "OK", "checked_at": datetime(2026, 10, 21, 11, 0, tzinfo=UTC)},
+            {"id": 1, "normalised_url": "https://portal.test/page", "result_summary": "OK", "checked_at": datetime(2026, 10, 21, 10, 0, tzinfo=UTC)},
+        ]
+    ]
+
+    row = db.get_recent_public_check(
+        visitor_hash="abc123",
+        normalised_url="https://portal.test/page",
+        hours=2,
+    )
+
+    assert row["id"] == 3
+    statement = connection.statements[0]
+    assert "ORDER BY checked_at DESC, id DESC" in statement.sql
+    assert "LIMIT 1" in statement.sql
+    assert statement.params == ("abc123", "https://portal.test/page", 2)
+
+
+def test_purge_old_public_checks_deletes_old_rows_and_returns_the_count(connection):
+    """purge_old_checks deletes old rows and reports the number deleted."""
+    connection.responses = [{"rows": [], "rowcount": 17}]
+
+    deleted = db.purge_old_public_checks(days=7)
+
+    assert deleted == 17
+    statement = connection.statements[0]
+    assert "DELETE FROM public_checks" in statement.sql
+    assert statement.params == (7,)
+    assert connection.commits == 1
+
+
+def test_purge_old_public_checks_defaults_to_7_days_and_returns_zero_without_old_rows(connection):
+    """Nothing to purge is not an error and the default window is 7 days."""
+    connection.responses = [{"rows": [], "rowcount": 0}]
+
+    assert db.purge_old_public_checks() == 0
+
+    assert connection.statements[0].params == (7,)
