@@ -1,6 +1,7 @@
 """Tests for the WhyDown frontend static files."""
 
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -61,3 +62,51 @@ def test_style_css_supports_dark_mode_and_the_hidden_attribute():
     text = _read("frontend/style.css")
     assert "prefers-color-scheme: dark" in text
     assert "[hidden]" in text
+
+
+def test_app_js_posts_to_the_render_api():
+    js = _read("frontend/app.js")
+    assert "https://whydown.onrender.com/api/public/check" in js
+
+
+def test_app_js_never_uses_innerhtml_or_eval():
+    js = _read("frontend/app.js")
+    assert "innerHTML" not in js
+    assert "outerHTML" not in js
+    assert "insertAdjacentHTML" not in js
+    assert "document.write" not in js
+    assert "eval(" not in js
+
+
+def test_app_js_uses_only_ids_that_exist_in_the_page():
+    js = _read("frontend/app.js")
+    html = _read("frontend/index.html")
+    ids = re.findall(r'getElementById\("([^"]+)"\)', js)
+    assert len(ids) == 10
+    for element_id in ids:
+        assert f'id="{element_id}"' in html
+
+
+def test_app_js_sends_json_with_the_content_type_header():
+    js = _read("frontend/app.js")
+    assert "application/json" in js
+    assert "JSON.stringify" in js
+    assert 'method: "POST"' in js
+
+
+def test_app_js_handles_the_ok_and_cached_statuses():
+    js = _read("frontend/app.js")
+    assert '"ok"' in js
+    assert '"cached"' in js
+
+
+def test_app_js_talks_only_to_the_two_known_addresses():
+    js = _read("frontend/app.js")
+    found = set(re.findall(r'https?://[^"\'\s]+', js))
+    assert found == {"http://127.0.0.1:5000/api/public/check", "https://whydown.onrender.com/api/public/check"}
+
+
+def test_app_js_limits_the_wait_with_a_timeout():
+    js = _read("frontend/app.js")
+    assert "AbortController" in js
+    assert "setTimeout" in js
