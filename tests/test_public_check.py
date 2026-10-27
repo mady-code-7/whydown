@@ -1,6 +1,12 @@
+import json
+
 import pytest
 
-from app.public_check import normalise_url
+from app import db, public_check
+from app.checker import CheckResult
+from app.config import PublicConfig
+from app.public_check import normalise_url, run_public_check
+from app.security import SecurityError, hash_visitor
 from app.validation import ValidationError
 
 
@@ -38,3 +44,126 @@ def test_normalise_url_rejects_a_username_and_password():
 def test_normalise_url_rejects_an_invalid_port():
     with pytest.raises(ValidationError):
         normalise_url("https://example.com:99999/")
+
+
+IP = "203.0.113.5"
+KEY = "test-hash-key-0123456789abcdef0123"
+
+
+def _config(limit: int = 50) -> PublicConfig:
+    return PublicConfig(ip_hash_key=KEY, rate_limit_per_hour=limit)
+
+
+def _result(**changes) -> CheckResult:
+    return CheckResult(**changes)
+
+
+def _setup(monkeypatch, recent=None, count=0, blocked=False, result=None) -> dict:
+    calls = {"recent": [], "count": [], "save": [], "check": [], "target": []}
+
+    def fake_recent(*args, **kwargs):
+        calls["recent"].append(args)
+        return recent
+
+    def fake_count(*args, **kwargs):
+        calls["count"].append(args)
+        return count
+
+    def fake_save(*args, **kwargs):
+        calls["save"].append(args)
+        return 1
+
+    def fake_check(url):
+        calls["check"].append(url)
+        return result if result is not None else _result()
+
+    def fake_target(url):
+        calls["target"].append(url)
+        if blocked:
+            raise SecurityError("blocked")
+
+    monkeypatch.setattr(db, "get_recent_public_check", fake_recent)
+    monkeypatch.setattr(db, "count_public_checks", fake_count)
+    monkeypatch.setattr(db, "save_public_check", fake_save)
+    monkeypatch.setattr(public_check, "check_url", fake_check)
+    monkeypatch.setattr(public_check, "check_url_target", fake_target)
+    return calls
+
+
+def test_run_public_check_runs_a_new_check_and_saves_the_summary(monkeypatch):
+    calls = _setup(monkeypatch)
+    out = run_public_check("https://Example.com", IP, _config())
+    assert out["status"] == "ok"
+    assert out["normalised_url"] == "https://example.com/"
+    assert calls["check"] == ["https://example.com/"]
+    assert len(calls["save"]) == 1
+    assert calls["save"][0][1] == "https://example.com/"
+    assert json.loads(calls["save"][0][2]) == out["result"]
+    assert out["result"]["result"] == "OK"
+
+
+def test_run_public_check_returns_the_saved_result_for_a_repeat_url_without_a_new_check(monkeypatch):
+    recent = {"id": 1, "normalised_url": "https://example.com/", "result_summary": json.dumps({"result": "OK"}), "checked_at": "2026-10-27"}
+    calls = _setup(monkeypatch, recent=recent)
+    out = run_public_check("https://example.com/", IP, _config())
+    assert out["status"] == "cached"
+    assert out["result"] == {"result": "OK"}
+    assert out["checked_at"] == "2026-10-27"
+    assert calls["check"] == []
+    assert calls["save"] == []
+    assert calls["target"] == []
+    assert calls["count"] == []
+
+
+def test_run_public_check_is_rate_limited_when_the_count_reaches_the_limit(monkeypatch):
+    calls = _setup(monkeypatch, count=3)
+    out = run_public_check("https://example.com/", IP, _config(3))
+    assert out["status"] == "rate_limited"
+    assert calls["check"] == []
+    assert calls["save"] == []
+
+
+def test_run_public_check_allows_a_check_when_the_count_is_below_the_limit(monkeypatch):
+    _setup(monkeypatch, count=2)
+    out = run_public_check("https://example.com/", IP, _config(3))
+    assert out["status"] == "ok"
+
+
+def test_run_public_check_blocks_an_unsafe_target_without_running_the_check(monkeypatch):
+    calls = _setup(monkeypatch, blocked=True)
+    out = run_public_check("https://example.com/", IP, _config())
+    assert out["status"] == "blocked"
+    assert calls["check"] == []
+    assert calls["save"] == []
+
+
+def test_run_public_check_returns_invalid_url_for_a_bad_address(monkeypatch):
+    calls = _setup(monkeypatch)
+    out = run_public_check("ftp://example.com/", IP, _config())
+    assert out["status"] == "invalid_url"
+    assert calls["recent"] == []
+    assert calls["count"] == []
+    assert calls["check"] == []
+    assert calls["save"] == []
+
+
+def test_run_public_check_passes_the_hashed_ip_and_never_the_raw_ip(monkeypatch):
+    expected = hash_visitor(IP, KEY)
+    calls = _setup(monkeypatch)
+    run_public_check("https://example.com/", IP, _config())
+    assert calls["recent"][0][0] == expected
+    assert calls["count"][0][0] == expected
+    assert calls["save"][0][0] == expected
+    assert IP not in str(calls)
+
+
+def test_run_public_check_summary_has_only_the_expected_keys(monkeypatch):
+    _setup(monkeypatch)
+    out = run_public_check("https://example.com/", IP, _config())
+    assert set(out["result"]) == {"result", "failed_stage", "status_code", "dns_ms", "tcp_ms", "tls_ms", "ttfb_ms", "total_ms", "error_message", "cert_expired", "cert_expiring_soon", "cert_invalid"}
+
+
+def test_run_public_check_cuts_a_long_error_message_to_300_characters(monkeypatch):
+    _setup(monkeypatch, result=_result(error_message="x" * 500))
+    out = run_public_check("https://example.com/", IP, _config())
+    assert len(out["result"]["error_message"]) == 300
