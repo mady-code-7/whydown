@@ -600,6 +600,11 @@ def test_the_page_works_with_the_real_database_function(monkeypatch):
     ])
     monkeypatch.setattr(db, "_connect", lambda: conn)
 
+    from app import auth
+
+    monkeypatch.setattr(auth, "admin_configured", lambda: True)
+    monkeypatch.setattr(auth, "is_admin", lambda: True)
+
     application = create_app()
     application.config["TESTING"] = True
     response = application.test_client().get("/")

@@ -514,9 +514,10 @@ def test_without_a_secret_key_the_sessions_end_with_the_process(monkeypatch, fak
 # --------------------------------------------------------------------------
 
 def test_the_dashboard_shows_the_admin_link_only_after_the_login(client, fake_db):
-    """A visitor does not see the admin links, an admin does."""
-    anonymous = client.get("/").get_data(as_text=True)
-    assert "/admin/login" not in anonymous
+    """A visitor is sent to the login page, an admin sees the admin links."""
+    anonymous = client.get("/")
+    assert anonymous.status_code == 302
+    assert "/admin/login" in anonymous.headers["Location"]
 
     log_in(client)
 
@@ -529,13 +530,14 @@ def test_the_dashboard_shows_the_admin_link_only_after_the_login(client, fake_db
 # --------------------------------------------------------------------------
 
 @pytest.mark.parametrize(
-    "path", ["/", "/incidents", "/api/sites", "/api/incidents", "/health"]
+    "path, expected",
+    [("/", 302), ("/incidents", 302), ("/api/sites", 401), ("/api/incidents", 401), ("/health", 200)],
 )
-def test_the_read_only_routes_stay_public(client, fake_db, path):
-    """The read-only routes need no session."""
+def test_the_read_only_routes_need_the_login_except_health(client, fake_db, path, expected):
+    """A visitor is turned away from the read-only routes, only the health route is public."""
     response = client.get(path)
 
-    assert response.status_code == 200
+    assert response.status_code == expected
 
 
 def test_the_run_checks_route_still_uses_its_own_token(client, fake_db, monkeypatch):

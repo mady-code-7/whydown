@@ -838,16 +838,19 @@ def register_dashboard_routes(app: Flask) -> None:
     """
 
     @app.get("/")
+    @auth.admin_required
     def dashboard():
         """The overview page: the state of every monitored site."""
         return _dashboard_overview()
 
     @app.get("/sites/<int:site_id>")
+    @auth.admin_required
     def site_detail(site_id: int):
         """The detail page of one site: its timings and its history."""
         return _site_detail(site_id)
 
     @app.get("/incidents")
+    @auth.admin_required
     def incidents():
         """The list of the incidents, newest first."""
         return _incidents_page()
@@ -862,16 +865,19 @@ def register_api_routes(app: Flask) -> None:
     """
 
     @app.get("/api/sites")
+    @auth.admin_required
     def api_sites():
         """List the sites with their current state."""
         return _api_sites()
 
     @app.get("/api/sites/<int:site_id>/checks")
+    @auth.admin_required
     def api_site_checks(site_id: int):
         """Return the recent checks of one site."""
         return _api_site_checks(site_id)
 
     @app.get("/api/incidents")
+    @auth.admin_required
     def api_incidents():
         """Return the incidents, newest first."""
         return _api_incidents()

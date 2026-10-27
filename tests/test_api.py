@@ -573,6 +573,11 @@ def test_the_routes_work_with_the_real_database_functions(monkeypatch):
     ])
     monkeypatch.setattr(db, "_connect", lambda: conn)
 
+    from app import auth
+
+    monkeypatch.setattr(auth, "admin_configured", lambda: True)
+    monkeypatch.setattr(auth, "is_admin", lambda: True)
+
     application = create_app()
     application.config["TESTING"] = True
     response = application.test_client().get("/api/sites")
@@ -602,6 +607,11 @@ def test_the_incidents_route_works_with_the_real_database_function(monkeypatch):
         ]
     ])
     monkeypatch.setattr(db, "_connect", lambda: conn)
+
+    from app import auth
+
+    monkeypatch.setattr(auth, "admin_configured", lambda: True)
+    monkeypatch.setattr(auth, "is_admin", lambda: True)
 
     application = create_app()
     application.config["TESTING"] = True
@@ -643,6 +653,11 @@ def test_the_checks_route_works_with_the_real_database_functions(monkeypatch):
         ],
     ])
     monkeypatch.setattr(db, "_connect", lambda: conn)
+
+    from app import auth
+
+    monkeypatch.setattr(auth, "admin_configured", lambda: True)
+    monkeypatch.setattr(auth, "is_admin", lambda: True)
 
     application = create_app()
     application.config["TESTING"] = True
