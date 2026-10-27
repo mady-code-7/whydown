@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhyDown - check a website</title>
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<main>
+<h1>WhyDown</h1>
+<p class="lead">Paste a website address to see why it is up or down: DNS, TCP, TLS and HTTP, step by step.</p>
+<form id="check-form" novalidate>
+<label for="url-input">Website address</label>
+<input id="url-input" name="url" type="text" placeholder="https://example.com" autocomplete="off" maxlength="2048" required>
+<button id="check-button" type="submit">Check</button>
+</form>
+<p id="status" role="status" aria-live="polite"></p>
+<section id="result" hidden>
+<h2 id="result-title"></h2>
+<p id="result-note"></p>
+<p id="result-error"></p>
+<table id="stage-table">
+<thead><tr><th>Stage</th><th>Time</th></tr></thead>
+<tbody id="stage-rows"></tbody>
+</table>
+<p id="result-meta"></p>
+</section>
+<footer><p>Temporary public page for a college project. Up to 50 checks per hour. The result of a check is saved, so the same address checked again within an hour shows the saved result.</p></footer>
+</main>
+</body>
+</html>

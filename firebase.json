@@ -1,0 +1,8 @@
+{
+  "hosting": {
+    "site": "whydown-nm",
+    "public": "frontend",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "cleanUrls": true
+  }
+}
