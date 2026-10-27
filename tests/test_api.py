@@ -110,6 +110,9 @@ def connection(monkeypatch):
 def client(connection, monkeypatch):
     """A test client whose database layer is faked."""
     monkeypatch.setenv("ADMIN_PASSWORD", "a-password-for-the-tests")
+    from app import auth
+
+    monkeypatch.setattr(auth, "is_admin", lambda: True)
     application = create_app()
     application.config["TESTING"] = True
     return application.test_client()
@@ -369,8 +372,11 @@ def test_api_endpoints_reject_post(client, db_calls, path):
     assert "error" in response.get_json()
 
 
-def test_the_sites_endpoint_is_a_write_route_now(client, db_calls):
+def test_the_sites_endpoint_is_a_write_route_now(client, db_calls, monkeypatch):
     """POST /api/sites is a write route: it needs a login and a token."""
+    from app import auth
+
+    monkeypatch.setattr(auth, "is_admin", lambda: False)
     response = client.post(
         "/api/sites", json={"name": "Portal", "url": "https://portal.test"}
     )

@@ -78,8 +78,12 @@ def connection(monkeypatch):
 
 
 @pytest.fixture
-def client(connection):
-    """A test client whose database layer is faked."""
+def client(connection, monkeypatch):
+    """A test client whose database layer is faked and that is logged in as an admin."""
+    from app import auth
+
+    monkeypatch.setattr(auth, "admin_configured", lambda: True)
+    monkeypatch.setattr(auth, "is_admin", lambda: True)
     application = create_app()
     application.config["TESTING"] = True
     return application.test_client()

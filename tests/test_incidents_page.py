@@ -100,8 +100,12 @@ def connection(monkeypatch):
 
 
 @pytest.fixture
-def client(connection):
-    """A test client whose database layer is faked."""
+def client(connection, monkeypatch):
+    """A test client whose database layer is faked and that is logged in as an admin."""
+    from app import auth
+
+    monkeypatch.setattr(auth, "admin_configured", lambda: True)
+    monkeypatch.setattr(auth, "is_admin", lambda: True)
     application = create_app()
     application.config["TESTING"] = True
     return application.test_client()
@@ -570,7 +574,7 @@ def test_the_navigation_is_on_every_page(client, summaries, incidents, checks, c
     """Every page of the dashboard has the navigation."""
     body = client.get(path).get_data(as_text=True)
 
-    assert len(nav_links(body)) == 2
+    assert {link["text"] for link in nav_links(body)} == {"Overview", "Incidents", "Admin"}
 
 
 def test_the_overview_is_the_current_page_on_the_overview(client, summaries):
