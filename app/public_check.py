@@ -7,14 +7,23 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import logging
 import urllib.parse
+from contextlib import suppress
 from typing import Any
+
+from flask import Flask, jsonify, request
 
 from app import db
 from app.checker import check_url
 from app.config import PublicConfig
 from app.security import SecurityError, check_url_target, hash_visitor
 from app.validation import ValidationError, validate_site_input
+
+logger = logging.getLogger(__name__)
+
+# HTTP code for each status that run_public_check can return.
+_STATUS_CODES = {"ok": 200, "cached": 200, "invalid_url": 400, "blocked": 400, "rate_limited": 429}
 
 
 def normalise_url(url: str) -> str:
@@ -142,3 +151,64 @@ def client_ip(forwarded_for: str | None, remote_addr: str | None) -> str:
     if remote_addr is not None and remote_addr.strip() != "":
         return remote_addr.strip()
     return "unknown"
+
+
+def _public_config() -> PublicConfig:
+    """Return the public configuration from the app config."""
+    from app.config import config
+
+    return config.public
+
+
+def _open_connection() -> Any:
+    """Return a new database connection."""
+    return db._connect()
+
+
+def _cors(response: Any) -> Any:
+    """Add CORS headers to the response and return it."""
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    response.headers["Access-Control-Max-Age"] = "86400"
+    return response
+
+
+def _json(body: dict[str, Any], status: int) -> Any:
+    """Return a JSON response with CORS headers and the given status code."""
+    response = jsonify(body)
+    response.status_code = status
+    return _cors(response)
+
+
+def register_public_routes(app: Flask) -> None:
+    """Register the public check endpoint."""
+
+    @app.route("/api/public/check", methods=["POST", "OPTIONS"])
+    def api_public_check():
+        if request.method == "OPTIONS":
+            return _cors(app.response_class(status=204))
+
+        data = request.get_json(silent=True)
+        url = data.get("url") if isinstance(data, dict) else None
+        if not isinstance(url, str):
+            return _json({"error": "Send a JSON body with a url."}, 400)
+
+        conn = None
+        try:
+            conn = _open_connection()
+            ip = client_ip(request.headers.get("X-Forwarded-For"), request.remote_addr)
+            outcome = run_public_check(url, ip, _public_config(), conn=conn)
+        except Exception as exc:  # noqa: BLE001 - any failure is a 503
+            logger.error("Public check failed (%s)", type(exc).__name__)
+            return _json({"error": "The check is not available."}, 503)
+        finally:
+            if conn is not None:
+                with suppress(Exception):
+                    conn.close()
+
+        value = outcome.get("checked_at")
+        if hasattr(value, "isoformat"):
+            outcome["checked_at"] = value.isoformat()
+
+        return _json(outcome, _STATUS_CODES.get(outcome["status"], 500))

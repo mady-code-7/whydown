@@ -22,6 +22,7 @@ from flask import (
 
 from . import auth, db
 from .config import CRON_SECRET_MIN_LENGTH, config, load_cron_secret
+from .public_check import register_public_routes
 from .runner import run_all_checks
 from .security import SecurityError, check_url_target
 from .validation import ValidationError, check_site_limits, validate_site_input
@@ -825,6 +826,7 @@ def register(app: Flask) -> None:
     register_api_routes(app)
     register_api_write_routes(app)
     register_admin_routes(app)
+    register_public_routes(app)
 
 
 # Placeholder functions to be implemented in later phases

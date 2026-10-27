@@ -1,8 +1,9 @@
 import json
+from datetime import UTC, datetime
 
 import pytest
 
-from app import db, public_check
+from app import create_app, db, public_check
 from app.checker import CheckResult
 from app.config import PublicConfig
 from app.public_check import client_ip, normalise_url, run_public_check
@@ -193,3 +194,135 @@ def test_client_ip_accepts_an_ipv6_forwarded_address():
 def test_client_ip_returns_unknown_when_nothing_is_available():
     assert client_ip(None, None) == "unknown"
     assert client_ip("", "  ") == "unknown"
+
+
+def _client(monkeypatch, outcome=None):
+    closed = []
+    calls = []
+
+    class _Conn:
+        def close(self):
+            closed.append(True)
+
+    def fake_run(url, visitor_ip, config, conn=None):
+        calls.append((url, visitor_ip, conn))
+        if isinstance(outcome, Exception):
+            raise outcome
+        return dict(outcome) if outcome is not None else {"status": "ok", "normalised_url": "https://example.com/", "result": {"result": "OK"}}
+
+    def _config():
+        return PublicConfig(ip_hash_key="test-hash-key-0123456789abcdef0123", rate_limit_per_hour=50)
+
+    monkeypatch.setattr(public_check, "_public_config", lambda: _config())
+    monkeypatch.setattr(public_check, "_open_connection", lambda: _Conn())
+    monkeypatch.setattr(public_check, "run_public_check", fake_run)
+
+    client = create_app({"TESTING": True}).test_client()
+    return client, calls, closed
+
+
+def test_public_check_route_returns_the_result_with_status_200(monkeypatch):
+    client, calls, closed = _client(monkeypatch)
+    response = client.post("/api/public/check", json={"url": "https://example.com"})
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "ok"
+    assert calls[0][0] == "https://example.com"
+    assert closed == [True]
+
+
+def test_public_check_route_sends_the_forwarded_address_as_the_visitor_ip(monkeypatch):
+    client, calls, _closed = _client(monkeypatch)
+    response = client.post(
+        "/api/public/check",
+        json={"url": "https://example.com"},
+        headers={"X-Forwarded-For": "203.0.113.9, 10.0.0.1"},
+    )
+    assert response.status_code == 200
+    assert calls[0][1] == "203.0.113.9"
+
+
+def test_public_check_route_uses_the_remote_address_without_a_forwarded_header(monkeypatch):
+    client, calls, _closed = _client(monkeypatch)
+    response = client.post(
+        "/api/public/check",
+        json={"url": "https://example.com"},
+        environ_overrides={"REMOTE_ADDR": "198.51.100.7"},
+    )
+    assert response.status_code == 200
+    assert calls[0][1] == "198.51.100.7"
+
+
+def test_public_check_route_maps_each_status_to_an_http_code(monkeypatch):
+    for status, code in [
+        ("ok", 200),
+        ("cached", 200),
+        ("invalid_url", 400),
+        ("blocked", 400),
+        ("rate_limited", 429),
+    ]:
+        client, _calls, _closed = _client(monkeypatch, outcome={"status": status, "message": "m"})
+        response = client.post("/api/public/check", json={"url": "https://example.com"})
+        assert response.status_code == code, f"expected {code} for {status}, got {response.status_code}"
+
+
+def test_public_check_route_turns_a_cached_datetime_into_iso_text(monkeypatch):
+    client, _calls, _closed = _client(
+        monkeypatch,
+        outcome={"status": "cached", "result": {"result": "OK"}, "checked_at": datetime(2026, 10, 27, 12, 0, tzinfo=UTC)},
+    )
+    response = client.post("/api/public/check", json={"url": "https://example.com"})
+    assert response.status_code == 200
+    assert response.get_json()["checked_at"] == "2026-10-27T12:00:00+00:00"
+
+
+def test_public_check_route_rejects_a_body_without_a_url(monkeypatch):
+    client, calls, _closed = _client(monkeypatch)
+    response = client.post("/api/public/check", json={})
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "Send a JSON body with a url."
+    response = client.post("/api/public/check", data="x")
+    assert response.status_code == 400
+    assert calls == []
+
+
+def test_public_check_route_rejects_a_url_that_is_not_text(monkeypatch):
+    client, calls, _closed = _client(monkeypatch)
+    response = client.post("/api/public/check", json={"url": 5})
+    assert response.status_code == 400
+    assert calls == []
+
+
+def test_public_check_route_answers_the_preflight_request(monkeypatch):
+    client, calls, _closed = _client(monkeypatch)
+    response = client.options(
+        "/api/public/check",
+        headers={"Origin": "https://whydown.web.app", "Access-Control-Request-Method": "POST"},
+    )
+    assert response.status_code == 204
+    assert response.headers["Access-Control-Allow-Origin"] == "*"
+    assert "POST" in response.headers["Access-Control-Allow-Methods"]
+    assert "Content-Type" in response.headers["Access-Control-Allow-Headers"]
+    assert calls == []
+
+
+def test_public_check_route_adds_cors_headers_to_every_answer(monkeypatch):
+    for outcome, expected_status in [
+        (None, 200),
+        ({"status": "invalid_url", "message": "m"}, 400),
+        ({"status": "rate_limited", "message": "m"}, 429),
+    ]:
+        client, _calls, _closed = _client(monkeypatch, outcome=outcome)
+        response = client.post("/api/public/check", json={"url": "https://example.com"})
+        assert response.status_code == expected_status
+        assert response.headers["Access-Control-Allow-Origin"] == "*"
+        assert "Access-Control-Allow-Credentials" not in response.headers
+
+
+def test_public_check_route_answers_503_and_closes_the_connection_when_the_check_fails(monkeypatch):
+    client, _calls, closed = _client(monkeypatch, outcome=RuntimeError("secret-detail"))
+    response = client.post("/api/public/check", json={"url": "https://example.com"})
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "The check is not available."}
+    assert "secret-detail" not in response.get_data(as_text=True)
+    assert closed == [True]
+    assert response.headers["Access-Control-Allow-Origin"] == "*"
