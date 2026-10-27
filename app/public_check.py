@@ -5,6 +5,7 @@ Used by the public check flow to canonicalise a user-supplied URL.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import urllib.parse
 from typing import Any
@@ -122,3 +123,22 @@ def run_public_check(url: str, visitor_ip: str, config: PublicConfig, conn: Any 
     summary = _summarise(result)
     db.save_public_check(visitor_hash, normalised, json.dumps(summary), conn=conn)
     return {"status": "ok", "normalised_url": normalised, "result": summary}
+
+
+def client_ip(forwarded_for: str | None, remote_addr: str | None) -> str:
+    """Return the visitor's IP, trusting the first X-Forwarded-For entry.
+
+    Behind Render the first X-Forwarded-For entry is the visitor; a visitor can
+    fake it, which is accepted for this temporary page.
+    """
+    if forwarded_for is not None and forwarded_for != "":
+        first = forwarded_for.split(",")[0].strip()
+        try:
+            parsed = ipaddress.ip_address(first)
+        except ValueError:
+            parsed = None
+        if parsed is not None:
+            return str(parsed)
+    if remote_addr is not None and remote_addr.strip() != "":
+        return remote_addr.strip()
+    return "unknown"

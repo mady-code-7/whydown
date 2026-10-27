@@ -5,7 +5,7 @@ import pytest
 from app import db, public_check
 from app.checker import CheckResult
 from app.config import PublicConfig
-from app.public_check import normalise_url, run_public_check
+from app.public_check import client_ip, normalise_url, run_public_check
 from app.security import SecurityError, hash_visitor
 from app.validation import ValidationError
 
@@ -167,3 +167,29 @@ def test_run_public_check_cuts_a_long_error_message_to_300_characters(monkeypatc
     _setup(monkeypatch, result=_result(error_message="x" * 500))
     out = run_public_check("https://example.com/", IP, _config())
     assert len(out["result"]["error_message"]) == 300
+
+
+def test_client_ip_uses_the_first_forwarded_address():
+    assert client_ip("203.0.113.5, 10.0.0.1", "198.51.100.7") == "203.0.113.5"
+
+
+def test_client_ip_ignores_spaces_around_the_forwarded_address():
+    assert client_ip("  203.0.113.5  ", None) == "203.0.113.5"
+
+
+def test_client_ip_falls_back_to_the_remote_address_without_a_header():
+    assert client_ip(None, "198.51.100.7") == "198.51.100.7"
+    assert client_ip("", "198.51.100.7") == "198.51.100.7"
+
+
+def test_client_ip_falls_back_when_the_first_forwarded_value_is_not_an_ip():
+    assert client_ip("not-an-ip, 203.0.113.5", "198.51.100.7") == "198.51.100.7"
+
+
+def test_client_ip_accepts_an_ipv6_forwarded_address():
+    assert client_ip("2001:db8::1", None) == "2001:db8::1"
+
+
+def test_client_ip_returns_unknown_when_nothing_is_available():
+    assert client_ip(None, None) == "unknown"
+    assert client_ip("", "  ") == "unknown"
