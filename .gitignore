@@ -85,3 +85,4 @@ deflategzip
 
 # Jupyter notebooks
 *.ipynb
+.firebase/

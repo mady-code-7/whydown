@@ -833,8 +833,8 @@ def register(app: Flask) -> None:
 def register_dashboard_routes(app: Flask) -> None:
     """Register the dashboard (spec section 8.5).
 
-    The dashboard is public and read-only: it reads the state of the sites
-    and never changes anything.
+    The dashboard needs the admin login and is read-only: it reads the state
+    of the sites and never changes anything.
     """
 
     @app.get("/")
@@ -859,8 +859,8 @@ def register_dashboard_routes(app: Flask) -> None:
 def register_api_routes(app: Flask) -> None:
     """Register the read-only JSON API (spec section 11).
 
-    The API is public and read-only: it never changes a site and never
-    starts a check. Every response says that it must not be cached, so a
+    The API needs the admin login and is read-only: it never changes a site
+    and never starts a check. Every response says that it must not be cached, so a
     client never shows an old state of a site.
     """
 
