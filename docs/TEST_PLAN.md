@@ -151,6 +151,22 @@ Automated tests after this part: 931 passed and `ruff check .` clean (2026-10-28
 
 Not tested live: the 48-hour expiry, the page for a site that is up (the button should stay hidden), and whether the watch row and the chat id were deleted in the database after the message (the message text says the watch ended; the database was not read).
 
+### Admin security check (2026-10-28)
+
+A read-only check of `app/auth.py` and `app/__init__.py`, plus one request to the deployed login page. Nothing was changed and the login lock-out was not tried live.
+
+| Item | Finding |
+|------|---------|
+| Password source | read from `ADMIN_PASSWORD` in the environment only; an empty password closes every admin route (fails closed); compared with `hmac.compare_digest` (code read) |
+| Local password strength | 12 or more characters with letters and digits (checked by a script that prints only True/False) |
+| Render password strength | stated by the author as long and strong; not checked by a script |
+| Session cookie flags | `Secure`, `HttpOnly` and `SameSite=Lax` seen in the `Set-Cookie` header of https://whydown.onrender.com/admin/login |
+| Session lifetime | 12 hours (`SESSION_LIFETIME` in `app/__init__.py`) |
+| Session at login | the session is cleared at login; the CSRF token belongs to the session (code read) |
+| Login rate limit | 5 failed logins in a 600 second window lock an address out for one window (code read) |
+
+Known limit (not fixed, recorded as D-12): the lock-out counts failures by `request.remote_addr`. On Render this may be the address of Render's proxy, so all visitors may share one counter, and five wrong logins from anyone could lock the admin out for 10 minutes. The counters are kept in memory, so a restart clears them. How many gunicorn workers run is not confirmed. Not tested live, to avoid locking the admin out before the viva.
+
 ## Coverage Report Details
 
 ### Per-Module Coverage (actual)
