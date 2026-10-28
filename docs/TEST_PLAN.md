@@ -1,12 +1,12 @@
 # WhyDown Test Plan
 
 ## Executive Summary
-- **Tests passed:** 794
+- **Tests passed:** 931
 - **Tests failed:** 0
 - **Tests skipped:** 0
-- **Overall test coverage:** 95% (2,241 statements total, 102 missing)
-- **Critical modules tested:** checker.py, classifier.py, incidents.py, alerts.py and validation.py at 100%; security.py at 92%
-- **Missing coverage:** 102 statements (4.6% total)
+- **Overall test coverage:** 96% (2,654 statements total, 116 missing)
+- **Critical modules tested:** checker.py, classifier.py, incidents.py, alerts.py and validation.py at 100%; security.py at 93%
+- **Missing coverage:** 116 statements (4.4% total)
 
 ## Test Strategy
 
@@ -34,13 +34,13 @@ WhyDown implements a comprehensive testing strategy aligned with the three subje
 ### Unit Tests
 - **app/checker.py:** DNS resolution, TCP connection, TLS handshake, HTTP request (100% coverage)
 - **app/classifier.py:** Failure classification (100% coverage)
-- **app/security.py:** SSRF filter (92% coverage, 6 missing statements)
+- **app/security.py:** SSRF filter (93% coverage, 6 missing statements)
 - **app/incidents.py:** Incident state machine (100% coverage)
 - **app/alerts.py:** Telegram alert sending (100% coverage)
 - **app/runner.py:** Full check runner (98% coverage)
 - **app/db.py:** PostgreSQL access layer (96% coverage)
-- **app/config.py:** Environment configuration (95% coverage)
-- **app/auth.py:** Admin authentication (95% coverage)
+- **app/config.py:** Environment configuration (96% coverage)
+- **app/auth.py:** Admin authentication (96% coverage)
 - **app/routes.py:** All Flask routes (89% coverage)
 
 ### Integration Tests
@@ -175,38 +175,44 @@ Known limit (not fixed, recorded as D-12): the lock-out counts failures by `requ
 |--------|-------|---------|----------|
 | app/checker.py | 280 | 280 | **100%** |
 | app/classifier.py | 33 | 33 | **100%** |
-| app/security.py | 76 | 70 | **92%** |
+| app/security.py | 85 | 79 | **93%** |
 | app/incidents.py | 64 | 64 | **100%** |
 | app/alerts.py | 289 | 289 | **100%** |
 | app/runner.py | 166 | 163 | **98%** |
-| app/db.py | 348 | 334 | **96%** |
-| app/config.py | 131 | 125 | **95%** |
-| app/auth.py | 131 | 125 | **95%** |
-| app/routes.py | 600 | 533 | **89%** |
+| app/db.py | 433 | 419 | **97%** |
+| app/config.py | 143 | 137 | **96%** |
+| app/auth.py | 131 | 126 | **96%** |
+| app/routes.py | 611 | 544 | **89%** |
 | app/__init__.py | 34 | 34 | **100%** |
 | app/validation.py | 89 | 89 | **100%** |
-| **TOTAL** | **2,241** | **2,139** | **95%** |
+| app/public_check.py | 116 | 111 | **96%** |
+| app/public_watch.py | 180 | 170 | **94%** |
+| **TOTAL** | **2,654** | **2,538** | **96%** |
 
 ### Coverage Targets
 
-- **Overall coverage:** 95% (>=80% target) PASS
+- **Overall coverage:** 96% (>=80% target) PASS
 - **Classifier coverage:** 100% (project goal, not in spec)
 - **Incident logic coverage:** 100% (project goal, not in spec)
 - **Critical network stages:** 100% (project goal, not in spec)
 
-### Coverage Gaps (102 statements total)
+### Coverage Gaps (116 statements total)
 
-1. **app/security.py:** 6 statements (lines 91 default resolver, 106 DNS timeout, 139-140 URL parse error, 144 missing hostname, 155 public IP literal return)
-2. **app/db.py:** 14 statements (lines 224-235 entire `get_site` function - no test calls `get_site` at all, lines 250-261 `update_site` query and execution)
-3. **app/config.py:** 6 statements (line 78 empty part skip, lines 196-197 invalid URL, 211 DB timeout <=0, 217 site timeout <1, 219 run deadline <1)
-4. **app/auth.py:** 6 statements (line 117 no configured password, 181 JSON body CSRF token, 225-227 login lock expiry, 281 non-API not-configured redirect)
-5. **app/routes.py:** 67 statements (lines 425-426 `_row_id` exception, 435-436 `_int_value` exception, 449-450 `_number` exception, 457/466 `_chart_label`/`_date_text` naive datetime, 459 `_chart_label` fallback, 677 `_incident_sort_key` naive datetime, 714-722 `_as_int` string parsing, 729-737 `_as_bool` parsing, 764 `_safe_next` fallback, 939 `api_add_site` non-dict JSON, 944-946/969-971/986-988/1069-1071/1094-1096/1108-1110/1134-1136/1148-1150 DB exception handlers, 960-962/1132 SSRF on URL change, 967/1132 site limit error, 974/1153 not found, 1008 already logged in, 1183-1184 `_admin_page_error` DB fallback, 1207 `_coerce_form_values` enabled coercion, 1252/1257 `_validated_site_values` enabled flag)
-6. **app/runner.py:** 3 statements (line 50 `_close_connection` None conn, 86 `_RunConnection.reopen` already broken, 277 `_run_sites` run deadline break)
+Missing lines in the run of 2026-10-28 (931 tests, Wi-Fi on). The line descriptions of the earlier list were removed, because the line numbers have moved and were not checked again.
+
+1. **app/auth.py:** 5 statements (lines 117, 181, 225-227)
+2. **app/config.py:** 6 statements (lines 78, 209-210, 224, 230, 232)
+3. **app/db.py:** 14 statements (lines 224-235 and 250-261; in the earlier list these were the `get_site` function, which no test calls, and the `update_site` query)
+4. **app/public_check.py:** 5 statements (lines 51, 62, 64, 158-160)
+5. **app/public_watch.py:** 10 statements (lines 57, 63, 66, 94-95, 101-102, 279-281)
+6. **app/routes.py:** 67 statements (lines 427-428, 437-438, 451-452, 459, 461, 468, 679, 716-724, 731-739, 766, 950, 955-957, 971-973, 978, 980-982, 985, 997-999, 1019, 1080-1082, 1105-1107, 1119-1121, 1143, 1145-1147, 1159-1161, 1164, 1194-1195, 1218, 1263, 1268)
+7. **app/runner.py:** 3 statements (lines 50, 86, 277)
+8. **app/security.py:** 6 statements (lines 93, 108, 141-142, 146, 157)
 
 ## Test Coverage by Subject
 
 ### Subject 1: Cloud Computing
-- **Deployment scenarios:** not tested yet (deployment is Phase 7)
+- **Deployment scenarios:** tested manually on the deployed system (see Deployment Tests)
 - **Free-tier constraints:** Validated
 
 ### Subject 2: Data Communication & Networking
@@ -214,7 +220,7 @@ Known limit (not fixed, recorded as D-12): the lock-out counts failures by `requ
 - **Failure modes:** DNS_FAILURE, CONNECT_TIMEOUT, TLS_ERROR, READ_TIMEOUT, etc.
 
 ### Subject 3: Software Testing & QA
-- **Test coverage:** 95%
+- **Test coverage:** 96%
 - **Test quality:** All tests pass
 - **Mock server:** Comprehensive failure scenarios
 
@@ -222,9 +228,9 @@ Known limit (not fixed, recorded as D-12): the lock-out counts failures by `requ
 ## Test Results Summary
 
 ```
-============================== 794 passed in 14.44s ===============================
+============================== 931 passed in 17.37s ===============================
 Coverage: 95.00%
-Critical modules: checker.py, classifier.py, incidents.py, alerts.py and validation.py at 100%; security.py at 92%
+Critical modules: checker.py, classifier.py, incidents.py, alerts.py and validation.py at 100%; security.py at 93%
 19 of 20 spec test cases have an automated test; T14 (alert state persistence across process restart) was tested manually on the deployed service and passed (see Deployment Tests)
 ```
 
@@ -232,10 +238,10 @@ Critical modules: checker.py, classifier.py, incidents.py, alerts.py and validat
 
 | Metric | Value | Target | Status |
 |--------|-------|--------|--------|
-| Test count | 794 | project goal, not in spec | PASS |
+| Test count | 931 | project goal, not in spec | PASS |
 | Pass rate | 100% | project goal, not in spec | PASS |
-| Overall coverage | 95% | >=80% | PASS |
-| Lowest of security, checker, classifier, incidents, alerts, validation: 92% (security.py) | 92% | project goal, not in spec | n/a (no spec target) |
+| Overall coverage | 96% | >=80% | PASS |
+| Lowest of security, checker, classifier, incidents, alerts, validation: 93% (security.py) | 93% | project goal, not in spec | n/a (no spec target) |
 
 ## Test Verification
 
@@ -263,7 +269,7 @@ HTML coverage report available at `htmlcov/index.html`
 ## Conclusions
 
 PASS **All tests pass**
-PASS **Coverage meets targets** - 95% overall; critical modules: checker.py, classifier.py, incidents.py, alerts.py and validation.py at 100%, security.py at 92%
+PASS **Coverage meets targets** - 96% overall; critical modules: checker.py, classifier.py, incidents.py, alerts.py and validation.py at 100%, security.py at 93%
 PASS **Unit and integration tests** - Unit and integration tests exist; the end-to-end test against the deployed system is recorded under Deployment Tests
 PASS **T14** - alert state persistence across a process restart was tested manually on the deployed Render service (2026-10-25): no second alert, one incident, same start time
 PASS **End-to-end test** - with the deployed scheduler and Telegram (2026-10-25): one DOWN alert after 3 failing runs, one RECOVERY alert, incident closed

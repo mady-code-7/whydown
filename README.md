@@ -14,16 +14,24 @@ When a site fails or slows down, WhyDown classifies the problem (for example a D
 - Incident tracking with a single down alert and a single recovery alert
 - Certificate expiry warnings
 - Dashboard with uptime percentages, response-time charts and incident history
-- Telegram or email alerts
+- Telegram alerts
+- Public check page: anyone can paste a website address and see the result stage by stage (temporary, for the college project)
+- One-time Telegram message when a site that was down is up again (public watch, lasts 48 hours)
 - Built-in protection against server-side request forgery (SSRF)
 - Mock failure server and automated tests with a coverage report
+
+## Live demo
+
+- Public check page: https://whydown-nm.web.app (static page on Firebase Hosting). It is temporary and is taken down after the viva.
+- Admin dashboard: https://whydown.onrender.com. It needs the admin login, and the public cannot open it.
+- The free Render service goes to sleep when idle. The first request can take up to about a minute.
 
 ## Tech Stack
 
 - **Backend:** Python, Flask
 - **Database:** Free hosted Postgres
 - **Frontend:** Jinja2, HTML/CSS, Chart.js
-- **Hosting:** Render (free tier) with an external free scheduler
+- **Hosting:** Render (free tier) with an external free scheduler; Firebase Hosting (free) for the public page
 - **Testing:** pytest, pytest-cov
 
 Everything runs on free tiers only, with no pay-as-you-go services.
@@ -55,10 +63,13 @@ pytest --cov=app
 
 ```
 whydown/
-├── app/        # Flask app, checker, classifier, incidents, alerts
-├── tests/      # Unit, integration and API tests, plus the mock server
-├── docs/       # Test plan, report and screenshots
-└── README.md
+|-- app/        # Flask app, checker, classifier, incidents, alerts, public check and watch
+|-- tests/      # Unit, integration and API tests, plus the mock server
+|-- frontend/   # Public check page (index.html, style.css, app.js)
+|-- docs/       # SPEC, ARCHITECTURE, TEST_PLAN, DEFECT_LOG, FREE_TIER_CHECKLIST,
+|               # PUBLIC_CHECK_DESIGN and init_db.sql
+|-- render.yaml # Render service definition
+`-- README.md
 ```
 
 ## Limitations
@@ -73,4 +84,4 @@ Fork the repository, create a branch, add tests for your changes, and open a pul
 
 ## License
 
-Add a license of your choice.
+No license chosen yet.
