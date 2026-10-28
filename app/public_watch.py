@@ -12,6 +12,7 @@ There is no webhook (Phase 8, part 4B):
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import logging
 import re
@@ -25,6 +26,8 @@ from typing import Any
 from flask import Flask, request
 
 from app import alerts, db, public_check
+from app.checker import check_url
+from app.security import SecurityError, check_url_target
 from app.validation import ValidationError
 
 logger = logging.getLogger(__name__)
@@ -207,3 +210,103 @@ def register_public_watch_routes(app: Flask) -> None:
         return public_check._json(
             {"status": "ok", "normalised_url": watch["normalised_url"], "message": text}, 200
         )
+
+
+# --------------------------------------------------------------------------
+# The check run (Phase 8, part 4C)
+# --------------------------------------------------------------------------
+
+# A watch is done when the site answers with one of these results.
+UP_RESULTS = ("OK", "SLOW", "DNS_SLOW")
+# The watches get this many seconds inside one check run (cron-job.org
+# gives up after 30 seconds).
+WATCH_DEADLINE_SECONDS = 8.0
+
+
+def up_message(url: str, status_code: Any) -> str:
+    """Return the one message a visitor gets when the site is up."""
+    code = f" (HTTP {status_code})" if isinstance(status_code, int) else ""
+    return (
+        f"WhyDown: {url} is up now{code}. "
+        "This was your one message and the watch has ended."
+    )
+
+
+def _check_watch(url: str) -> Any:
+    """Check the address of a watch. Returns None when the address is blocked."""
+    try:
+        check_url_target(url)
+    except SecurityError:
+        return None
+    return check_url(url)
+
+
+def process_public_watches(
+    conn: Any,
+    deadline: float = WATCH_DEADLINE_SECONDS,
+) -> dict[str, int]:
+    """Check the active watches and send the UP message for the sites that are up.
+
+    A watch ends after its message, when its address is blocked, or when it is
+    older than the watch time. A site that is still down, a check that is not
+    ready within ``deadline`` seconds and a failed message keep the watch for
+    the next run.
+    """
+    summary = {"expired": 0, "watched": 0, "sent": 0, "blocked": 0}
+    summary["expired"] = db.purge_expired_public_watches(conn=conn)
+
+    watches = db.list_active_public_watches(conn=conn)
+    summary["watched"] = len(watches)
+    if not watches:
+        return summary
+
+    credentials = alerts.telegram_credentials()
+    if credentials is None:
+        return summary
+    token = credentials[0]
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=len(watches))
+    try:
+        futures = {
+            executor.submit(_check_watch, watch["normalised_url"]): watch
+            for watch in watches
+        }
+        done, _pending = concurrent.futures.wait(futures, timeout=deadline)
+        for future in done:
+            watch = futures[future]
+            try:
+                result = future.result()
+            except Exception as exc:  # noqa: BLE001 - one watch must not stop the others
+                logger.error("Public watch check failed (%s)", type(exc).__name__)
+                continue
+
+            if result is None:
+                db.delete_public_watch(watch["id"], conn=conn)
+                summary["blocked"] += 1
+                continue
+            if getattr(result, "result", None) not in UP_RESULTS:
+                continue
+
+            text = up_message(watch["normalised_url"], getattr(result, "status_code", None))
+            try:
+                alerts.send_telegram(text, token, watch["chat_id"])
+            except alerts.TelegramError as exc:
+                logger.error("Public watch message failed (%s)", type(exc).__name__)
+                continue
+            db.delete_public_watch(watch["id"], conn=conn)
+            summary["sent"] += 1
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+    return summary
+
+
+def process_public_watches_safely() -> None:
+    """Run the watches of one check run. Any failure is logged and ignored."""
+    conn = None
+    try:
+        conn = public_check._open_connection()
+        process_public_watches(conn)
+    except Exception as exc:  # noqa: BLE001 - the check run must never fail because of this
+        logger.error("Public watches failed (%s)", type(exc).__name__)
+    finally:
+        _close(conn)
