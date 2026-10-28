@@ -80,7 +80,7 @@ whydown/
 
 ## Contributing
 
-Fork the repository, create a branch, add tests for your changes, and open a pull request.
+This is a college project. Contributions are not accepted.
 
 ## License
 
