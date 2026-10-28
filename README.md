@@ -84,4 +84,4 @@ Fork the repository, create a branch, add tests for your changes, and open a pul
 
 ## License
 
-No license chosen yet.
+All rights reserved. See the LICENSE file.
