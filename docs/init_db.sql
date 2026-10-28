@@ -95,3 +95,11 @@ CREATE TABLE IF NOT EXISTS public_checks (
     checked_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_public_checks_visitor_time ON public_checks (visitor_hash, checked_at);
+
+CREATE TABLE IF NOT EXISTS public_watches (
+    id BIGSERIAL PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    normalised_url TEXT NOT NULL,
+    chat_id TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

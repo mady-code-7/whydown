@@ -816,6 +816,108 @@ def purge_old_public_checks(days: int = 7, conn: Any | None = None) -> int:
     return int(deleted or 0)
 
 
+# A public watch lasts this many hours, then it is deleted (handoff 8b).
+WATCH_HOURS = 48
+# At most this many watches are checked in one run.
+MAX_WATCHES_PER_RUN = 10
+
+
+@_db_errors
+def create_public_watch(
+    code: str,
+    normalised_url: str,
+    conn: Any | None = None,
+) -> int:
+    """Store a new public watch (no Telegram chat yet) and return its id."""
+    query = """INSERT INTO public_watches (code, normalised_url)
+               VALUES (%s, %s)
+               RETURNING id"""
+
+    with _connection(conn) as session, _cursor(session) as cur:
+        cur.execute(query, (code, normalised_url))
+        row = cur.fetchone()
+        session.commit()
+
+    if not row or row.get("id") is None:
+        raise DatabaseError("The public watch could not be stored")
+    return int(row["id"])
+
+
+@_db_errors
+def attach_public_watch_chat(
+    code: str,
+    chat_id: str,
+    conn: Any | None = None,
+) -> dict[str, Any] | None:
+    """Save the Telegram chat of a watch that is still active.
+
+    Returns the id and the URL of the watch, or None when the code is
+    unknown or the watch is older than ``WATCH_HOURS``.
+    """
+    query = (
+        "UPDATE public_watches SET chat_id = %s "
+        "WHERE code = %s AND created_at > NOW() - (%s * INTERVAL '1 hour') "
+        "RETURNING id, normalised_url"
+    )
+
+    with _connection(conn) as session, _cursor(session) as cur:
+        cur.execute(query, (chat_id, code, WATCH_HOURS))
+        row = cur.fetchone()
+        session.commit()
+
+    if not row:
+        return None
+    return dict(row)
+
+
+@_db_errors
+def list_active_public_watches(
+    limit: int = MAX_WATCHES_PER_RUN,
+    conn: Any | None = None,
+) -> list[dict[str, Any]]:
+    """Return the active watches that already have a Telegram chat, oldest first."""
+    query = (
+        "SELECT id, normalised_url, chat_id, created_at FROM public_watches "
+        "WHERE chat_id IS NOT NULL "
+        "AND created_at > NOW() - (%s * INTERVAL '1 hour') "
+        "ORDER BY created_at, id LIMIT %s"
+    )
+
+    with _connection(conn) as session, _cursor(session) as cur:
+        cur.execute(query, (WATCH_HOURS, limit))
+        rows = cur.fetchall()
+    return [dict(row) for row in rows]
+
+
+@_db_errors
+def delete_public_watch(watch_id: int, conn: Any | None = None) -> bool:
+    """Delete one watch (and with it the Telegram chat id). True if it existed."""
+    query = "DELETE FROM public_watches WHERE id = %s"
+
+    with _connection(conn) as session:
+        with _cursor(session) as cur:
+            cur.execute(query, (watch_id,))
+            deleted = cur.rowcount
+        session.commit()
+    return bool(deleted)
+
+
+@_db_errors
+def purge_expired_public_watches(conn: Any | None = None) -> int:
+    """Delete the watches older than ``WATCH_HOURS`` and return how many went."""
+    query = (
+        "DELETE FROM public_watches "
+        "WHERE created_at <= NOW() - (%s * INTERVAL '1 hour')"
+    )
+
+    with _connection(conn) as session:
+        with _cursor(session) as cur:
+            cur.execute(query, (WATCH_HOURS,))
+            deleted = cur.rowcount
+        session.commit()
+    return int(deleted or 0)
+
+
 # --------------------------------------------------------------------------
 # Command line entry points
 # --------------------------------------------------------------------------
