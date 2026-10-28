@@ -134,6 +134,23 @@ Run on 2026-10-25 against the deployed system: a Render free web service, the Su
 - The Render log shows no request from cron-job.org and no app start in that time. The service started only when the site was opened in a browser at 9:38.
 - Result: FAIL for a scheduler that is expected to wake the service. Recorded as D-10 (Accepted). The scheduler works while the service is awake (see the end-to-end test).
 
+### Public page watch test (2026-10-28)
+
+Tested on the deployed services: the public page https://whydown-nm.web.app (Firebase, frontend commit `f0f1448`) and the Render service. After a Manual Deploy of the latest commit the Render log showed "Your service is live" (the commit hash was not read from the dashboard). The test site was my own suspended Render site https://risk-lens-hla4.onrender.com, which answers HTTP 503. Two Telegram accounts on one phone were used: the admin account of the bot and a second account acting as a visitor. Times are the phone's local time. The cron-job.org job was switched on for the test and switched off afterwards.
+
+| Step | Expected | Result |
+|------|----------|--------|
+| 1. Check the suspended site on the page | HTTP_5XX, failed at the http stage, status 503 | PASS (shown as a saved result from 11:39:16, "Already checked") |
+| 2. Look for the button | "Alert me on Telegram when it is up" appears for a down site | PASS |
+| 3. Start link and "I pressed Start" | the bot opens and the page says Done | PASS |
+| 4. Telegram message after confirming | one message "I am watching ..." | PASS (11:42) |
+| 5. Site brought back up, scheduler on | exactly one "is up now" message for the visitor | PASS (11:48, HTTP 200, one message) |
+| 6. The other (admin) account | no new message | PASS |
+
+Automated tests after this part: 931 passed and `ruff check .` clean (2026-10-28, Wi-Fi on).
+
+Not tested live: the 48-hour expiry, the page for a site that is up (the button should stay hidden), and whether the watch row and the chat id were deleted in the database after the message (the message text says the watch ended; the database was not read).
+
 ## Coverage Report Details
 
 ### Per-Module Coverage (actual)
@@ -235,3 +252,4 @@ PASS **Unit and integration tests** - Unit and integration tests exist; the end-
 PASS **T14** - alert state persistence across a process restart was tested manually on the deployed Render service (2026-10-25): no second alert, one incident, same start time
 PASS **End-to-end test** - with the deployed scheduler and Telegram (2026-10-25): one DOWN alert after 3 failing runs, one RECOVERY alert, incident closed
 PASS **Deployment measurements** - the free-tier deployment on Render works; the cold start was measured once on 2026-10-25 (41.7 s first request, 0.9 s second)
+PASS **Public page watch test** - on the deployed page with two Telegram accounts (2026-10-28): the button appeared for a down site, the watch was confirmed, and the visitor got exactly one UP message after the site came back
