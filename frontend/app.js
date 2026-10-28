@@ -6,6 +6,8 @@ const API_URL =
     : "https://whydown.onrender.com/api/public/check";
 
 const TIMEOUT_MS = 90000;
+const WATCH_URL = API_URL.replace("/check", "/watch");
+const CONFIRM_URL = WATCH_URL + "/confirm";
 const UP_RESULTS = ["OK", "SLOW", "DNS_SLOW"];
 
 const form = document.getElementById("check-form");
@@ -18,6 +20,15 @@ const resultNote = document.getElementById("result-note");
 const resultError = document.getElementById("result-error");
 const stageRows = document.getElementById("stage-rows");
 const resultMeta = document.getElementById("result-meta");
+const watchBox = document.getElementById("watch-box");
+const watchButton = document.getElementById("watch-button");
+const watchStep = document.getElementById("watch-step");
+const watchLink = document.getElementById("watch-link");
+const confirmButton = document.getElementById("confirm-button");
+const watchStatus = document.getElementById("watch-status");
+
+let watchedUrl = "";
+let watchCode = "";
 
 function formatMs(value) {
   return typeof value === "number" ? Math.round(value) + " ms" : "-";
@@ -80,6 +91,12 @@ function showResult(data) {
   const code = typeof result.status_code === "number" ? String(result.status_code) : "none";
   resultMeta.textContent =
     "HTTP status: " + code + (flags.length ? ". Certificate: " + flags.join(", ") : "");
+  watchedUrl = data.normalised_url || "";
+  watchCode = "";
+  watchBox.hidden = isUp || !watchedUrl;
+  watchStep.hidden = true;
+  watchButton.disabled = false;
+  watchStatus.textContent = "";
   resultBox.hidden = false;
 }
 
@@ -124,4 +141,80 @@ async function runCheck(event) {
   }
 }
 
+async function postJson(url, payload) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    let data = null;
+    try {
+      data = await response.json();
+    } catch (error) {
+      data = null;
+    }
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function startWatch() {
+  if (!watchedUrl) {
+    return;
+  }
+  watchButton.disabled = true;
+  watchStatus.textContent = "Preparing the Telegram link...";
+  try {
+    const data = await postJson(WATCH_URL, { url: watchedUrl });
+    if (data && data.status === "ok" && data.code && data.link) {
+      watchCode = data.code;
+      watchLink.href = data.link;
+      watchStep.hidden = false;
+      watchStatus.textContent = "Open Telegram, tap Start, then come back and press I pressed Start.";
+    } else {
+      watchStatus.textContent =
+        (data && (data.message || data.error)) || "Something went wrong. Try again in a minute.";
+      watchButton.disabled = false;
+    }
+  } catch (error) {
+    watchStatus.textContent = "The server did not answer. Try again in a minute.";
+    watchButton.disabled = false;
+  }
+}
+
+async function confirmWatch() {
+  if (!watchCode) {
+    return;
+  }
+  confirmButton.disabled = true;
+  watchStatus.textContent = "Checking Telegram...";
+  try {
+    const data = await postJson(CONFIRM_URL, { code: watchCode });
+    if (data && data.status === "ok") {
+      watchStep.hidden = true;
+      watchStatus.textContent = "Done. You will get one Telegram message when the site is up.";
+    } else if (data && data.status === "waiting") {
+      watchStatus.textContent = data.message || "Tap Start in Telegram first, then try again.";
+    } else if (data && data.status === "expired") {
+      watchStep.hidden = true;
+      watchButton.disabled = false;
+      watchStatus.textContent = data.message || "This watch has expired. Start again.";
+    } else {
+      watchStatus.textContent =
+        (data && (data.message || data.error)) || "Something went wrong. Try again in a minute.";
+    }
+  } catch (error) {
+    watchStatus.textContent = "The server did not answer. Try again in a minute.";
+  } finally {
+    confirmButton.disabled = false;
+  }
+}
+
 form.addEventListener("submit", runCheck);
+watchButton.addEventListener("click", startWatch);
+confirmButton.addEventListener("click", confirmWatch);

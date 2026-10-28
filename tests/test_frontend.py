@@ -82,7 +82,7 @@ def test_app_js_uses_only_ids_that_exist_in_the_page():
     js = _read("frontend/app.js")
     html = _read("frontend/index.html")
     ids = re.findall(r'getElementById\("([^"]+)"\)', js)
-    assert len(ids) == 10
+    assert len(ids) == 16
     for element_id in ids:
         assert f'id="{element_id}"' in html
 
