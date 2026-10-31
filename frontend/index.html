@@ -3,18 +3,52 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#fbf6e9">
+<meta name="description" content="Paste a website address to see why it is up or down: DNS, TCP, TLS and HTTP, step by step.">
 <title>WhyDown - check a website</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%231b1747'/%3E%3Ccircle cx='16' cy='17' r='10' fill='%23ff4f8b'/%3E%3Ccircle cx='12.5' cy='15' r='1.8' fill='%231b1747'/%3E%3Ccircle cx='19.5' cy='15' r='1.8' fill='%231b1747'/%3E%3Cpath d='M12 20q4 3.5 8 0' stroke='%231b1747' stroke-width='1.8' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 <script src="app.js" defer></script>
 </head>
 <body>
-<main>
-<h1>WhyDown</h1>
-<p class="lead">Paste a website address to see why it is up or down: DNS, TCP, TLS and HTTP, step by step.</p>
+<div class="scrollbar" aria-hidden="true"></div>
+<div class="backdrop" aria-hidden="true"><i class="wash w1"></i><i class="wash w2"></i><i class="wash w3"></i></div>
+<div class="mascot" aria-hidden="true">
+<span class="bubble">Paste a website address.</span>
+<div class="peek"><svg class="blob" viewBox="0 0 124 140"><g class="blob-body"><path class="antenna" d="M60 16V5"/><circle class="bulb" cx="60" cy="4" r="3.5"/><path class="arm-l" d="M13 86q-10 3-11 15"/><g class="arm-r"><path d="M107 88q13-2 15-21"/><circle class="hand" cx="122" cy="64" r="5"/></g><path class="body" d="M60 16C94 16 112 44 110 82C108 116 88 132 60 132C32 132 12 116 10 82C8 44 26 16 60 16Z"/><ellipse class="cheek" cx="30" cy="94" rx="8" ry="5"/><ellipse class="cheek" cx="90" cy="94" rx="8" ry="5"/><g class="face f-happy"><g class="eyes"><circle cx="42" cy="70" r="5"/><circle cx="78" cy="70" r="5"/></g><path d="M48 92q12 12 24 0"/></g><g class="face f-sleepy"><path d="M36 72h14M70 72h14M54 96h12"/><path class="zz" d="M92 40h10l-10 12h10"/></g><g class="face f-dizzy"><path d="M36 64l12 12M48 64l-12 12M72 64l12 12M84 64l-12 12"/><path d="M46 96q5-5 9 0t9 0t9 0"/></g></g></svg></div>
+</div>
+<header class="bar">
+<a class="mark" href="#top"><svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><path class="l-ant" d="M20 8V3"/><circle class="l-bulb" cx="20" cy="3" r="2"/><circle class="l-body" cx="20" cy="23" r="15"/><circle class="l-eye l-a" cx="14.5" cy="21" r="2.6"/><circle class="l-eye l-b" cx="25.5" cy="21" r="2.6"/><path class="l-mouth" d="M14.5 29q5.5 4.5 11 0"/></svg>WhyDown</a>
+<nav class="menu" aria-label="Sections">
+<a href="#how">How it works</a>
+<a href="#telegram">Telegram alert</a>
+</nav>
+</header>
+<main id="top">
+<section class="hero">
+<div class="sky" aria-hidden="true">
+<div class="stars rnd"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+<svg class="wire" viewBox="0 0 1200 140" preserveAspectRatio="xMidYMin slice"><g class="pole"><path d="M60 140V22M36 34h48M42 52h36M420 140V22M396 34h48M402 52h36M780 140V22M756 34h48M762 52h36M1140 140V22M1116 34h48M1122 52h36"/></g><path class="w-line" d="M-200 34Q-70 86 60 34Q240 84 420 34Q600 84 780 34Q960 84 1140 34Q1270 86 1400 34"/><path class="w-line" d="M-200 52Q-70 104 60 52Q240 102 420 52Q600 102 780 52Q960 102 1140 52Q1270 104 1400 52"/><path class="w-spark sp1" pathLength="1" d="M-200 34Q-70 86 60 34Q240 84 420 34Q600 84 780 34Q960 84 1140 34Q1270 86 1400 34"/><path class="w-spark sp2" pathLength="1" d="M-200 52Q-70 104 60 52Q240 102 420 52Q600 102 780 52Q960 102 1140 52Q1270 104 1400 52"/><path class="w-spark sp3" pathLength="1" d="M-200 52Q-70 104 60 52Q240 102 420 52Q600 102 780 52Q960 102 1140 52Q1270 104 1400 52"/></svg>
+<div class="sky-in">
+<svg class="lamp" viewBox="0 0 120 220"><g class="lamp-swing"><path class="cord" d="M60 0V70"/><path class="cap" d="M50 70h20v10H50z"/><circle class="glow" cx="60" cy="126" r="40"/><path class="shade" d="M32 120L50 80h20l18 40z"/><circle class="bulb" cx="60" cy="126" r="9"/><path class="chain" d="M60 135v30"/><circle class="bead" cx="60" cy="142" r="2"/><circle class="bead" cx="60" cy="152" r="2"/><rect class="tag" x="44" y="165" width="32" height="30" rx="4"/><text class="mini" x="60" y="178" text-anchor="middle">up</text><text class="mini" x="60" y="190" text-anchor="middle">down</text></g></svg>
+<span class="sticker st-a">Up or down</span>
+<span class="sticker st-b">Step by step</span>
+<span class="sticker st-c">Times every step</span>
+<b class="xh"></b><b class="xh"></b><b class="xh"></b>
+</div>
+</div>
+<div class="hero-in">
+<p class="tape"><span class="beacon"></span>Live DNS, TCP, TLS and HTTP checks</p>
+<h1 class="title"><span class="kicker">Instant Website Diagnostics:</span><span class="phrase"> Not just if it's <span class="down">down</span>, but <span class="why">why</span>.</span></h1>
+<p class="lede">Paste a website address to see why it is up or down: DNS, TCP, TLS and HTTP, step by step.</p>
 <form id="check-form" novalidate>
 <label for="url-input">Website address</label>
+<span class="slot">
+<svg class="slot-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18z"/></svg>
 <input id="url-input" name="url" type="text" placeholder="https://example.com" autocomplete="off" maxlength="2048" required>
-<button id="check-button" type="submit">Check</button>
+</span>
+<button id="check-button" type="submit" title="Run a DNS, TCP, TLS and HTTP check on this website">Check Site</button>
 </form>
 <p id="status" role="status" aria-live="polite"></p>
 <section id="result" hidden>
@@ -28,12 +62,90 @@
 <p id="result-meta"></p>
 <div id="watch-box" hidden>
 <p id="watch-note">Want a message when it is back up? The watch lasts 48 hours. No alert comes after that.</p>
-<button id="watch-button" type="button">Alert me on Telegram when it is up</button>
-<p id="watch-step" hidden><a id="watch-link" href="#" target="_blank" rel="noopener">Open Telegram and tap Start</a><br><button id="confirm-button" type="button">I pressed Start</button></p>
+<button id="watch-button" type="button" title="Start a 48-hour watch and get a Telegram message when the site is back up">Alert me on Telegram when it is up</button>
+<div id="watch-step" hidden><a id="watch-link" href="#" target="_blank" rel="noopener" title="Open the WhyDown bot in Telegram, then tap Start">Open Telegram and tap Start</a><button id="confirm-button" type="button" title="Confirm you pressed Start in Telegram so the watch can begin">I pressed Start</button></div>
 <p id="watch-status" role="status" aria-live="polite"></p>
 </div>
 </section>
-<footer><p>Temporary public page for a college project. Up to 50 checks per hour. The result of a check is saved, so the same address checked again within an hour shows the saved result.</p></footer>
+<div class="metro-wrap" aria-hidden="true">
+<i class="rail"></i>
+<svg class="branch" viewBox="0 0 130 70"><defs><pattern id="p-hazard" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="8" fill="#ffd23f"/><rect x="4" width="4" height="8" fill="#1b1747"/></pattern></defs><path class="trk" d="M0 66H34L58 40H78M92 40H100"/><path class="trk gap" d="M78 40H92"/><path class="post" d="M104 24V58M120 24V58"/><rect class="bar-h" x="98" y="30" width="28" height="9" rx="2"/><path class="xmark" d="M60 28l9 9m0-9l-9 9"/></svg>
+<i class="train"></i>
+<ol class="metro">
+<li data-tip="Turns the website name into a server address."><b>DNS</b><span>Find the server</span></li>
+<li data-tip="Opens a connection to that server."><b>TCP</b><span>Open a connection</span></li>
+<li data-tip="Sets up the secure connection and checks the certificate."><b>TLS</b><span>Secure it</span></li>
+<li data-tip="Asks for the page and reads the status code."><b>HTTP</b><span>Load the page</span></li>
+</ol>
+</div>
+</div>
+<svg class="city" viewBox="0 -70 1200 280" preserveAspectRatio="xMidYMax slice" aria-hidden="true"><defs><linearGradient id="g-beam" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#fff3a8" stop-opacity=".85"/><stop offset="1" stop-color="#fff3a8" stop-opacity="0"/></linearGradient></defs><path class="beam" d="M278 46L206 -66H350Z"/><g class="bld"><path d="M0 210V130H70V210Z"/><path d="M76 210V100H150V210Z"/><path d="M156 210V150H230V210Z"/><path d="M236 210V60H320V210Z"/><path d="M326 210V120H400V210Z"/><path d="M406 210V150H470V210Z"/><path d="M476 210V118H560V210Z"/><path d="M566 210V140H630V210Z"/><path d="M636 210V70H720V210Z"/><path d="M726 210V130H800V210Z"/><path d="M806 210V105H880V210Z"/><path d="M886 210V155H950V210Z"/><path d="M956 210V85H1040V210Z"/><path d="M1046 210V125H1120V210Z"/><path d="M1126 210V145H1200V210Z"/></g><g class="rows rnd"><path d="M9 150H61"/><path d="M9 174H61"/><path d="M85 120H141"/><path d="M85 144H141"/><path d="M85 168H141"/><path d="M85 192H141"/><path d="M165 170H221"/><path d="M165 194H221"/><path d="M245 80H311"/><path d="M245 104H311"/><path d="M245 128H311"/><path d="M245 152H311"/><path d="M245 176H311"/><path d="M335 140H391"/><path d="M335 164H391"/><path d="M335 188H391"/><path class="off" d="M415 170H461"/><path class="off" d="M415 194H461"/><path d="M485 138H551"/><path d="M485 162H551"/><path d="M485 186H551"/><path d="M575 160H621"/><path d="M575 184H621"/><path d="M645 90H711"/><path d="M645 114H711"/><path d="M645 138H711"/><path d="M645 162H711"/><path d="M645 186H711"/><path d="M735 150H791"/><path d="M735 174H791"/><path d="M815 125H871"/><path d="M815 149H871"/><path d="M815 173H871"/><path d="M895 175H941"/><path d="M965 105H1031"/><path d="M965 129H1031"/><path d="M965 153H1031"/><path d="M965 177H1031"/><path d="M1055 145H1111"/><path d="M1055 169H1111"/><path d="M1055 193H1111"/><path d="M1135 165H1191"/><path d="M1135 189H1191"/></g><g class="roofs"><path d="M113 100V78M105 88h16"/><path d="M346 120V108M380 120V108M340 108h46V90a23 8 0 0 0-46 0z"/><path d="M268 60V52h20v8"/><circle cx="278" cy="48" r="4"/><path d="M678 70V58M664 48q14 14 28 0M678 48l-6-10"/><path d="M886 155L918 138L950 155"/><path d="M998 85V66h14v8h-14"/><path d="M1070 125v-12h10v12"/><path class="crack" d="M762 130l-8 22 10 8-9 24 7 14"/><path d="M0 210H1200"/></g><g class="q"><path d="M511 80C511 70 520 66 527 69C535 72 536 82 528 87C523 90 522 93 522 100"/><circle cx="522" cy="109" r="2.6"/></g></svg>
+</section>
+<div class="split" aria-hidden="true"><svg viewBox="0 0 1200 260" preserveAspectRatio="xMidYMid slice"><defs><radialGradient id="g-glow"><stop offset="0" stop-color="#ffe27a" stop-opacity=".95"/><stop offset="1" stop-color="#ffe27a" stop-opacity="0"/></radialGradient><radialGradient id="g-fog"><stop offset="0" stop-color="#cdc6ee" stop-opacity=".95"/><stop offset="1" stop-color="#cdc6ee" stop-opacity="0"/></radialGradient><g id="pl"><path class="stem" d="M0 0C-5 -22 6 -40 0 -64"/><path class="leaf" d="M0 -20C-20 -28 -28 -16 -26 -8C-12 -8 -4 -12 0 -20Z"/><path class="leaf" d="M0 -36C18 -46 28 -36 26 -26C12 -26 4 -30 0 -36Z"/><path class="leaf" d="M0 -50C-14 -60 -24 -52 -22 -42C-10 -42 -2 -44 0 -50Z"/><circle class="bud" cx="0" cy="-68" r="6"/></g></defs><path class="g-live" d="M0 200Q150 190 300 200T600 200V260H0Z"/><path class="g-dead" d="M600 200Q750 208 900 198T1200 202V260H600Z"/><path class="seam" d="M600 34V260"/><text class="mini" x="586" y="30" text-anchor="end">up</text><text class="mini" x="614" y="30">down</text><g class="sun"><circle class="sun-core" cx="110" cy="62" r="20"/><path class="sun-rays" d="M110 36V28M110 88v8M84 62h-8M136 62h8M92 44l-6-6M128 44l6-6M92 80l-6 6M128 80l6 6"/></g><g class="moon"><circle cx="990" cy="62" r="20"/><circle cx="982" cy="56" r="3"/><circle cx="996" cy="68" r="4"/><circle cx="994" cy="52" r="2"/></g><path class="post" d="M170 200V52M440 200V52"/><path class="string" d="M170 52Q305 102 440 52"/><g class="lantern rnd"><g transform="translate(240 69)"><circle class="lglow" cx="0" cy="21" r="26"/><path d="M0 0v10"/><rect class="lbody" x="-8" y="10" width="16" height="22" rx="5"/><path d="M-4 18v6M4 18v6"/></g><g transform="translate(305 75)"><circle class="lglow" cx="0" cy="21" r="26"/><path d="M0 0v10"/><rect class="lbody" x="-8" y="10" width="16" height="22" rx="5"/><path d="M-4 18v6M4 18v6"/></g><g transform="translate(380 67)"><circle class="lglow" cx="0" cy="21" r="26"/><path d="M0 0v10"/><rect class="lbody" x="-8" y="10" width="16" height="22" rx="5"/><path d="M-4 18v6M4 18v6"/></g></g><g class="sway rnd"><g transform="translate(86 200) scale(1.1)"><g class="plant"><use href="#pl"/></g></g><g transform="translate(258 200)"><g class="plant"><use href="#pl"/></g></g><g transform="translate(520 200) scale(1.25)"><g class="plant"><use href="#pl"/></g></g></g><path class="grass" d="M20 200l-4-9M26 200l2-11M32 200l5-8M350 200l-3-9M356 200l3-10M470 200l-4-8M476 200l3-10M575 200l-3-8M581 200l2-9"/><path class="ecg" d="M20 238H140l8-12 8 24 10-44 10 52 8-20 8 0H400l8-12 8 24 10-44 10 52 8-20 8 0H590"/><path class="ecg-pulse" pathLength="1" d="M20 238H140l8-12 8 24 10-44 10 52 8-20 8 0H400l8-12 8 24 10-44 10 52 8-20 8 0H590"/><path class="crack" d="M650 204l8 12-7 9 10 12-6 14M850 203l-6 11 9 8-8 12M960 202l7 10-6 9 8 11M1100 203l-8 12 8 10"/><g class="tomb"><g transform="translate(700 204) rotate(-4)"><path class="stone" d="M-26 0V-44a26 26 0 0 1 52-0V0Z"/><text y="-24" text-anchor="middle">404</text><path class="grass" d="M-34 0l-4-8M-30 0l0-10M30 0l4-9"/></g><g transform="translate(802 204) rotate(3) scale(.92)"><path class="stone" d="M-26 0V-44a26 26 0 0 1 52-0V0Z"/><text y="-24" text-anchor="middle">503</text><path class="grass" d="M-34 0l-3-9M32 0l5-8"/></g><g transform="translate(906 204) rotate(-2) scale(1.1)"><path class="stone" d="M-26 0V-44a26 26 0 0 1 52-0V0Z"/><text y="-24" text-anchor="middle">DNS</text><path class="grass" d="M-32 0l-5-8M-28 0l1-10M30 0l4-9"/></g><g transform="translate(1012 204) rotate(5) scale(.96)"><path class="stone" d="M-26 0V-44a26 26 0 0 1 52-0V0Z"/><text y="-24" text-anchor="middle">Cert</text><path class="grass" d="M-34 0l-4-8M30 0l5-10"/></g></g><g transform="translate(1140 202)"><path class="stem" d="M0 0C0 -26 6 -42 26 -52"/><path class="leaf wilt" d="M2 -16c-14 -4 -20 4 -20 12c10 2 18 -2 20 -12z"/><g class="wilt-head" transform="translate(28 -50)"><circle r="7"/><path d="M-6 6l-4 10M0 8v12M6 6l4 10"/></g></g><ellipse class="fog fog-a" cx="780" cy="192" rx="170" ry="24"/><ellipse class="fog fog-b" cx="1020" cy="204" rx="190" ry="22"/></svg></div>
+<div class="runway" aria-hidden="true"><div class="runway-track rnd"><span class="lbl l-ok">200 all good</span><span class="lbl l-warn">301 moved</span><span class="lbl l-warn">403 not allowed</span><span class="lbl l-bad">404 not found</span><span class="lbl l-bad">500 server error</span><span class="lbl l-bad">503 unavailable</span><span class="lbl l-ok">200 all good</span><span class="lbl l-warn">301 moved</span><span class="lbl l-warn">403 not allowed</span><span class="lbl l-bad">404 not found</span><span class="lbl l-bad">500 server error</span><span class="lbl l-bad">503 unavailable</span></div></div>
+<div class="runway back" aria-hidden="true"><div class="runway-track rnd"><span class="lbl l-bad">DNS problem</span><span class="lbl l-bad">Connection refused</span><span class="lbl l-warn">Timeout</span><span class="lbl l-bad">Certificate error</span><span class="lbl l-bad">HTTP error</span><span class="lbl l-warn">Slow</span><span class="lbl l-bad">DNS problem</span><span class="lbl l-bad">Connection refused</span><span class="lbl l-warn">Timeout</span><span class="lbl l-bad">Certificate error</span><span class="lbl l-bad">HTTP error</span><span class="lbl l-warn">Slow</span></div></div>
+<section class="sec" id="how">
+<h2 class="sec-title">How a check works</h2>
+<div class="sec-body">
+<p class="sec-lead">WhyDown follows the same path your browser takes and times every step. The step that fails is the reason the site is down.</p>
+<dl class="steps">
+<div class="step t-blue"><dt><svg class="sketch" viewBox="0 0 200 130" aria-hidden="true"><path class="draw" pathLength="1" d="M30 120h140"/><path class="draw" pathLength="1" d="M100 120V14"/><path class="draw f-yellow" pathLength="1" d="M100 24h46l10 10-10 10h-46z"/><path class="draw f-blue" pathLength="1" d="M100 52h-46l-10 10 10 10h46z"/><path class="draw ghost" pathLength="1" d="M100 80h42l10 10-10 10h-42z"/><circle cx="108" cy="86" r="2"/><circle cx="108" cy="94" r="2"/><path class="wob" d="M172 92c0-9 12-9 12 0c0 6-6 6-6 13M178 114v.1"/></svg>DNS</dt><dd>Turns the website name into a server address. It fails when the name does not exist or its DNS is broken.</dd></div>
+<div class="step t-violet"><dt><svg class="sketch" viewBox="0 0 200 130" aria-hidden="true"><rect class="draw f-paper" pathLength="1" x="22" y="30" width="56" height="72" rx="14"/><path class="draw" pathLength="1" d="M42 54v16M58 54v16"/><circle cx="50" cy="86" r="4"/><path class="zap" d="M90 50l-8 10 10 4-8 12"/><rect class="draw f-pink" pathLength="1" x="116" y="50" width="40" height="30" rx="7"/><path class="draw" pathLength="1" d="M116 59h-12M116 71h-12"/><path class="draw" pathLength="1" d="M156 65c22 0 28 28 6 34s-18 22 8 22"/></svg>TCP</dt><dd>Opens a connection to that server. It fails when the server refuses the connection or does not answer.</dd></div>
+<div class="step t-pink"><dt><svg class="sketch" viewBox="0 0 200 130" aria-hidden="true"><path class="draw" pathLength="1" d="M78 58V46a22 22 0 0 1 44 0v12"/><rect class="draw f-yellow" pathLength="1" x="64" y="58" width="72" height="56" rx="12"/><circle cx="100" cy="80" r="6"/><path d="M100 86v12"/><path class="crackline" d="M114 58l-10 16 10 8-12 14 8 18"/><g class="stamp" transform="rotate(-14 150 36)"><rect x="118" y="22" width="68" height="24" rx="4"/><text x="152" y="38" text-anchor="middle">EXPIRED</text></g></svg>TLS</dt><dd>Sets up the secure connection and checks the certificate. It fails when the certificate is expired or invalid.</dd></div>
+<div class="step t-lime"><dt><svg class="sketch" viewBox="0 0 200 130" aria-hidden="true"><path class="draw f-paper" pathLength="1" d="M56 16h56l24 24v78H56z"/><path class="draw" pathLength="1" d="M112 16v24h24"/><path class="draw" pathLength="1" d="M68 58h44M68 72h60M68 86h36"/><g class="errbadge"><circle cx="140" cy="100" r="19"/><path d="M140 90v12M140 108v.1"/></g><path class="smoke sm1" d="M130 74q-8-8 0-14q8-6 0-14"/><path class="smoke sm2" d="M148 76q8-8 0-14q-8-6 0-14"/></svg>HTTP</dt><dd>Asks for the page and reads the status code. An error code means the server is up but the page is not working.</dd></div>
+</dl>
+</div>
+</section>
+<section class="sec" id="example">
+<h2 class="sec-title">What a result looks like</h2>
+<div class="sec-body">
+<p class="sec-lead">An example check. Each bar starts where the one before it ends, so the longest bar is where the time went.</p>
+<div class="sample" aria-hidden="true">
+<div class="stats">
+<div class="stat t-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg><span>TTFB</span><strong>373 ms</strong></div>
+<div class="stat t-violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/></svg><span>Total time</span><strong>1.9 s</strong></div>
+<div class="stat t-pink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span>TLS version</span><strong>TLS 1.3</strong></div>
+<div class="stat good t-lime"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg><span>Status code</span><strong>200</strong></div>
+</div>
+<div class="timeline"><div class="lane t-blue"><span>DNS</span><div class="track"><i></i></div><em>5 ms</em></div><div class="lane t-violet"><span>TCP</span><div class="track"><i></i></div><em>153 ms</em></div><div class="lane t-pink"><span>TLS</span><div class="track"><i></i></div><em>635 ms</em></div><div class="lane t-amber"><span>First byte</span><div class="track"><i></i></div><em>373 ms</em></div></div>
+<div class="bench">
+<div class="gizmo"><svg viewBox="0 0 80 64"><g class="bars rnd"><rect x="6" y="30" width="10" height="26" rx="2"/><rect x="20" y="22" width="10" height="34" rx="2"/><rect x="34" y="14" width="10" height="42" rx="2"/><rect x="48" y="26" width="10" height="30" rx="2"/><rect x="62" y="8" width="10" height="48" rx="2"/></g><path class="base" d="M2 58H78"/></svg><span class="cap">Slow</span></div>
+<div class="gizmo"><svg viewBox="0 0 100 70"><path class="arc-track" d="M10 58A40 40 0 0 1 90 58"/><path class="arc a-g" d="M10 58A40 40 0 0 1 30 23.4"/><path class="arc a-a" d="M30 23.4A40 40 0 0 1 70 23.4"/><path class="arc a-r" d="M70 23.4A40 40 0 0 1 90 58"/><path class="ticks" d="M50 14v5M24 30l4 3M76 30l-4 3"/><path class="needle" d="M50 58V26"/><circle class="hub" cx="50" cy="58" r="5"/></svg><span class="cap">Total time</span></div>
+<div class="gizmo"><svg viewBox="0 0 100 70"><defs><clipPath id="c-scope"><rect x="8" y="8" width="84" height="54" rx="4"/></clipPath></defs><rect class="screen" x="4" y="4" width="92" height="62" rx="9"/><path class="grid" d="M8 35H92M8 21H92M8 49H92M29 8V62M50 8V62M71 8V62"/><g clip-path="url(#c-scope)"><path class="trace" d="M-19 35q6.25-22 12.5 0t12.5 0t12.5 0t12.5 0t12.5 0t12.5 0t12.5 0t12.5 0t12.5 0t12.5 0t12.5 0t12.5 0t12.5 0"/></g></svg><span class="cap">TLS</span></div>
+<div class="gizmo"><svg viewBox="0 0 80 80"><circle class="ring" cx="40" cy="40" r="34"/><circle class="ring" cx="40" cy="40" r="22"/><circle class="ring" cx="40" cy="40" r="10"/><path class="cross" d="M40 6V74M6 40H74"/><path class="sweep" d="M40 40V6A34 34 0 0 1 64 16Z"/><circle class="blip rnd-b1" cx="56" cy="26" r="3"/><circle class="blip rnd-b2" cx="26" cy="52" r="3"/><circle class="blip rnd-b3" cx="52" cy="58" r="3"/></svg><span class="cap">DNS</span></div>
+<div class="gizmo wide"><svg class="map" viewBox="0 0 200 100"><defs><pattern id="p-dots" width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="currentColor"/></pattern></defs><path class="land" d="M18 18L50 10L70 16L74 32L64 44L52 50L44 60L36 46L24 38Z"/><path class="land" d="M52 58L66 56L72 70L64 90L56 92L52 76Z"/><path class="land" d="M92 20L112 14L124 20L118 34L104 38L94 32Z"/><path class="land" d="M96 42L118 40L126 58L116 82L104 84L96 64Z"/><path class="land" d="M120 16L168 10L190 26L184 44L160 54L140 50L128 36Z"/><path class="land" d="M156 70L184 68L188 84L164 90Z"/><path class="hop h1" pathLength="1" d="M50 28Q80 6 108 26"/><path class="hop h2" pathLength="1" d="M108 26Q136 6 160 28"/><path class="hop h3" pathLength="1" d="M160 28Q150 56 110 60"/><path class="hop h4" pathLength="1" d="M110 60Q80 56 62 72"/><circle class="node" cx="50" cy="28" r="3"/><circle class="node" cx="108" cy="26" r="3"/><circle class="node" cx="160" cy="28" r="3"/><circle class="node" cx="110" cy="60" r="3"/><circle class="node" cx="62" cy="72" r="3"/></svg><span class="cap">TCP</span></div>
+</div>
+</div>
+</div>
+</section>
+<section class="sec" id="telegram">
+<h2 class="sec-title">Get a message when it is back up</h2>
+<div class="sec-body">
+<p class="sec-lead">If a site is down, a button appears under the result. Open the WhyDown bot in Telegram, tap Start, then press I pressed Start here. You get one message when the site is up again. The watch lasts 48 hours.</p>
+<span class="sticker st-d" aria-hidden="true">48 hours</span>
+<svg class="plane" viewBox="0 0 170 90" aria-hidden="true"><path class="trail" d="M4 78C34 78 40 26 84 36S126 70 142 24"/><path class="paper" d="M138 26L166 12L150 44L144 32Z"/><path d="M144 32L166 12"/></svg>
+<ol class="tg-steps">
+<li class="t-blue"><b>Open the bot</b><span>Use the link under the result.</span></li>
+<li class="t-violet"><b>Tap Start</b><span>This lets the bot message you.</span></li>
+<li class="t-pink"><b>Confirm here</b><span>Press I pressed Start on this page.</span></li>
+</ol>
+</div>
+</section>
+<section class="sec" id="tells">
+<h2 class="sec-title">What WhyDown can tell you</h2>
+<div class="sec-body">
+<details class="t-blue"><summary><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M6 6h10l2 2-2 2H6zM18 13H8l-2 2 2 2h10"/></svg>DNS problem</summary><p>The website name could not be turned into an address.</p></details>
+<details class="t-violet"><summary><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3v5M16 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4M4 4l16 16"/></svg>Connection refused</summary><p>The server was reached but did not accept the connection.</p></details>
+<details class="t-amber"><summary><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/></svg>Timeout</summary><p>The server did not answer in time.</p></details>
+<details class="t-pink"><summary><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3M12 14l-2 3 2 1-1 3"/></svg>Certificate error</summary><p>The certificate is expired or invalid, so the secure connection fails.</p></details>
+<details class="t-lime"><summary><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6zM14 3v4h4M12 11v4M12 18v.01"/></svg>HTTP error</summary><p>The server answered with an error status code.</p></details>
+<details class="t-amber"><summary><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12M6 21h12M7 3c0 6 5 7 5 9s-5 3-5 9M17 3c0 6-5 7-5 9s5 3 5 9"/></svg>Slow</summary><p>The site answered, but later than it should.</p></details>
+</div>
+</section>
 </main>
+<footer class="foot">
+<p>Not just if a website is down, but why.</p>
+<p class="big-word" aria-hidden="true">WhyDown.</p>
+</footer>
 </body>
 </html>
